@@ -70,13 +70,17 @@
   // ===========================================================================
   const STORAGE_KEY = "backstage-tech-handoff-v1";
   const PASSWORD_KEY = "backstage-host-password";
+  const SIGNOUT_NOTICE_KEY = "backstage-signout-notice";
   const API_BASE_KEY = "backstage-host-api-base-v1";
+  const FIXED_API_BASE_URL = "https://theatre-api.jvideo.dev";
   const $ = (id) => document.getElementById(id);
   let toastTimer;
   let saveTimer;
   let saveQueue = Promise.resolve();
   let serverStorageEnabled = false;
   let hostConnectionProblem = false;
+  let activePassword = "";
+  let reloadAfterLogin = false;
   let state = createBlankState();
 
   const eventFieldMap = {
@@ -235,22 +239,16 @@
     }
   }
 
-  // The local version uses the same-origin /api route. The GitHub Pages version
-  // can connect to a separate HTTPS API on the theatre host. This URL is a
-  // per-browser setting; event data itself remains on the server.
+  // The published GitHub Pages app is permanently tied to the theatre API.
+  // Old browser settings cannot redirect it to another server. Non-static/local
+  // deployments may still use an optional saved host URL.
   function getApiBaseUrl() {
-    // GitHub Pages cannot store shared records itself. Default its API connection
-    // to the theatre host so visitors don't silently enter local-only mode.
+    if (window.BACKSTAGE_STATIC_SITE) return FIXED_API_BASE_URL;
     try {
       const saved = (localStorage.getItem(API_BASE_KEY) || "").trim().replace(/\/+$/, "");
-      // Migrate an earlier misspelling of the API hostname if it was saved in this browser.
-      if (window.BACKSTAGE_STATIC_SITE && saved === "https://theater-api.jvideo.dev") {
-        localStorage.setItem(API_BASE_KEY, "https://theatre-api.jvideo.dev");
-        return "https://theatre-api.jvideo.dev";
-      }
       if (saved) return saved;
-    } catch (_) { /* use the deployment default below */ }
-    return window.BACKSTAGE_STATIC_SITE ? "https://theatre-api.jvideo.dev" : "";
+    } catch (_) { /* use same-origin API below */ }
+    return "";
   }
 
   function apiUrl(path) {
@@ -262,24 +260,24 @@
     const input = $("apiBaseUrl");
     const status = $("apiConnectionStatus");
     const badge = $("apiConnectionBadge");
-    if (!input || !status || !badge) return;
-    if (document.activeElement !== input) input.value = getApiBaseUrl();
+    if (!status || !badge) return;
     const base = getApiBaseUrl();
+    if (input && document.activeElement !== input) input.value = base;
     if (message) {
       status.textContent = message;
-    } else if (base && serverStorageEnabled && !hostConnectionProblem) {
-      status.textContent = `Connected to ${base}. Shared data is stored on that host.`;
-    } else if (base && hostConnectionProblem) {
-      status.textContent = `Could not reach ${base}. Check the host, tunnel/network connection, and password; edits may currently be browser-only.`;
+    } else if (serverStorageEnabled && !hostConnectionProblem) {
+      status.textContent = `Connected to the required API at ${base}. Shared data is stored on the theatre host.`;
+    } else if (hostConnectionProblem) {
+      status.textContent = `Cannot reach ${base}. This site is locked to the shared host and will not switch to browser-only storage.`;
+    } else if (window.BACKSTAGE_STATIC_SITE) {
+      status.textContent = `Required API: ${FIXED_API_BASE_URL}. Sign in and connect to this host to use Backstage.`;
     } else if (base) {
       status.textContent = `Saved host address: ${base}. Connect to load the shared record.`;
-    } else if (window.BACKSTAGE_STATIC_SITE) {
-      status.textContent = "No host configured. This browser is currently in local-only mode until you connect the host.";
     } else {
-      status.textContent = "No remote host configured. When this app is served by server.js, it uses the same computer automatically.";
+      status.textContent = "Using the API served on this computer.";
     }
-    badge.textContent = serverStorageEnabled ? "Host connected" : (base && hostConnectionProblem ? "Host unavailable" : (base ? "Host configured" : "Local mode"));
-    badge.className = `pill ${serverStorageEnabled ? "green" : (base && hostConnectionProblem ? "red" : "amber")}`;
+    badge.textContent = serverStorageEnabled ? "Host connected" : (hostConnectionProblem ? "Host unavailable" : (window.BACKSTAGE_STATIC_SITE ? "Required host" : (base ? "Host configured" : "Local API")));
+    badge.className = `pill ${serverStorageEnabled ? "green" : (hostConnectionProblem ? "red" : "amber")}`;
   }
 
   // Shared-host sign-in is a branded full-page form, not a browser prompt.
@@ -298,7 +296,7 @@
     const screen = $("loginScreen");
     if (!screen) return;
     const hostLabel = $("loginHostName");
-    if (hostLabel) hostLabel.textContent = getApiBaseUrl() || (window.BACKSTAGE_STATIC_SITE ? "Shared host not configured" : window.location.origin);
+    if (hostLabel) hostLabel.textContent = window.BACKSTAGE_STATIC_SITE ? FIXED_API_BASE_URL : (getApiBaseUrl() || window.location.origin);
     setLoginMessage(message);
     screen.hidden = false;
     document.body.classList.add("loginOpen");
@@ -321,7 +319,8 @@
   function requestPasswordLogin(message) {
     if (loginPromise) return loginPromise;
     loginPromise = new Promise((resolve) => { loginResolver = resolve; });
-    showLoginPage(message || "Sign in to access the shared theatre record.");
+    const defaultPrompt = "Sign in to access the shared theatre record.";
+    showLoginPage(message && message !== defaultPrompt ? message : "");
     return loginPromise;
   }
 
@@ -334,10 +333,13 @@
   }
 
   async function validateAccessPassword(password) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
     try {
       const response = await fetch(apiUrl("/api/state"), {
         method: "GET",
         cache: "no-store",
+        signal: controller.signal,
         headers: { "X-Theatre-Password": password },
       });
       if (response.status === 401) {
@@ -349,11 +351,13 @@
         return { ok: false, message: detail || `The host returned an error (${response.status}).` };
       }
       return { ok: true, message: "" };
-    } catch (_) {
-      return {
-        ok: false,
-        message: `Couldn't reach ${getApiBaseUrl() || window.location.origin}. Check that the host and Cloudflare Tunnel are running and that the website origin is allowed.`,
-      };
+    } catch (error) {
+      const detail = error?.name === "AbortError"
+        ? "The theatre host did not respond within 12 seconds."
+        : `Couldn't reach ${getApiBaseUrl() || window.location.origin}. Check that the host and Cloudflare Tunnel are running and that the website origin is allowed.`;
+      return { ok: false, message: detail };
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -362,6 +366,18 @@
     // local-only bypass that would make a visitor think their changes were shared.
     const cancelButton = $("loginCancel");
     if (cancelButton && window.BACKSTAGE_STATIC_SITE) cancelButton.style.display = "none";
+
+    $("passwordToggle")?.addEventListener("click", () => {
+      const input = $("loginPassword");
+      const toggle = $("passwordToggle");
+      if (!input || !toggle) return;
+      const showPassword = input.type === "password";
+      input.type = showPassword ? "text" : "password";
+      toggle.setAttribute("aria-pressed", String(showPassword));
+      toggle.setAttribute("aria-label", showPassword ? "Hide password" : "Show password");
+      toggle.title = showPassword ? "Hide password" : "Show password";
+      input.focus();
+    });
 
     $("loginForm").addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -375,10 +391,12 @@
       const submitButton = $("loginSubmit");
       const originalLabel = submitButton.innerHTML;
       submitButton.disabled = true;
+      submitButton.setAttribute("aria-busy", "true");
       submitButton.textContent = "Checking password…";
       setLoginMessage("");
       const result = await validateAccessPassword(password);
       submitButton.disabled = false;
+      submitButton.removeAttribute("aria-busy");
       submitButton.innerHTML = originalLabel;
 
       if (!result.ok) {
@@ -387,7 +405,14 @@
         return;
       }
 
-      try { sessionStorage.setItem(PASSWORD_KEY, password); } catch (_) { /* held in memory for this request */ }
+      activePassword = password;
+      try { sessionStorage.setItem(PASSWORD_KEY, password); } catch (_) { /* keep password in memory for this tab */ }
+      if (reloadAfterLogin) {
+        // Reload from the host's canonical record after connectivity is restored.
+        // Any edits that the host did not accept are deliberately not revived locally.
+        window.location.reload();
+        return;
+      }
       finishPasswordLogin(password);
     });
 
@@ -398,16 +423,24 @@
   }
 
   async function hostRequest(url, options = {}) {
-    const targetUrl = url.startsWith("/api/") ? apiUrl(url) : url;
+    // On GitHub Pages, no input, localStorage value, or stale setting can change
+    // the API hostname. Only API paths are allowed through this helper.
+    if (window.BACKSTAGE_STATIC_SITE && !String(url).startsWith("/api/")) {
+      throw new Error("The published site may contact only its configured theatre API.");
+    }
+    const targetUrl = window.BACKSTAGE_STATIC_SITE
+      ? `${FIXED_API_BASE_URL}${url}`
+      : (url.startsWith("/api/") ? apiUrl(url) : url);
     const headers = new Headers(options.headers || {});
-    let password = "";
-    try { password = sessionStorage.getItem(PASSWORD_KEY) || ""; } catch (_) { /* private browsing */ }
+    let password = activePassword;
+    try { password = sessionStorage.getItem(PASSWORD_KEY) || activePassword || ""; } catch (_) { /* use the in-memory session */ }
     if (password) headers.set("X-Theatre-Password", password);
 
     let response = await fetch(targetUrl, { cache: "no-store", ...options, headers });
     while (response.status === 401) {
       const hadPassword = Boolean(headers.get("X-Theatre-Password"));
       try { sessionStorage.removeItem(PASSWORD_KEY); } catch (_) { /* best effort */ }
+      activePassword = "";
       headers.delete("X-Theatre-Password");
 
       password = await requestPasswordLogin(hadPassword
@@ -435,12 +468,8 @@
   }
 
   async function loadInitialState() {
-    // GitHub Pages hosts only static files. Do not probe a fake /api route there
-    // until a remote host URL has been configured in Customize.
     if (window.BACKSTAGE_STATIC_SITE && !getApiBaseUrl()) {
-      serverStorageEnabled = false;
-      hostConnectionProblem = false;
-      return loadLocalState();
+      throw new Error(`Required API ${FIXED_API_BASE_URL} is not configured.`);
     }
 
     try {
@@ -449,21 +478,30 @@
       serverStorageEnabled = true;
       hostConnectionProblem = false;
       if (isValidState(saved)) {
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(saved)); } catch (_) { /* host is canonical */ }
-        return normalizeState(saved);
+        // Published frontend never treats browser storage as the database.
+        if (!window.BACKSTAGE_STATIC_SITE) {
+          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(saved)); } catch (_) { /* host is canonical */ }
+        }
+        return isValidState(saved) ? normalizeState(saved) : createBlankState();
       }
       return createBlankState();
     } catch (error) {
       serverStorageEnabled = false;
-      hostConnectionProblem = Boolean(error.hostUnavailable);
-      if (hostConnectionProblem) {
-        console.error("The host save could not be reached. Using the browser cache until the connection is restored.", error);
+      hostConnectionProblem = true;
+      if (window.BACKSTAGE_STATIC_SITE) {
+        error.hostUnavailable = true;
+        throw error;
       }
+      console.error("The host save could not be reached. Loading the local cache for this non-published deployment.", error);
       return loadLocalState();
     }
   }
 
   async function connectToHost() {
+    if (window.BACKSTAGE_STATIC_SITE) {
+      renderApiConnectionPanel(`The API endpoint is fixed to ${FIXED_API_BASE_URL} and cannot be changed here.`);
+      return;
+    }
     const input = $("apiBaseUrl");
     let candidate;
     try {
@@ -544,6 +582,10 @@
   }
 
   function disconnectFromHost() {
+    if (window.BACKSTAGE_STATIC_SITE) {
+      renderApiConnectionPanel(`This site must remain connected to ${FIXED_API_BASE_URL}; disconnecting is disabled.`);
+      return;
+    }
     if (!window.confirm("Disconnect this browser from shared host storage? Future edits will be saved only in this browser until you reconnect.")) return;
     try { localStorage.removeItem(API_BASE_KEY); } catch (_) { /* best effort */ }
     try { sessionStorage.removeItem(PASSWORD_KEY); } catch (_) { /* best effort */ }
@@ -571,21 +613,41 @@
     toastTimer = setTimeout(() => toast.classList.remove("show"), 2800);
   }
 
+  function lockStaticSiteAfterHostFailure(message) {
+    if (!window.BACKSTAGE_STATIC_SITE) return;
+    serverStorageEnabled = false;
+    hostConnectionProblem = true;
+    reloadAfterLogin = true;
+    activePassword = "";
+    try { sessionStorage.removeItem(PASSWORD_KEY); } catch (_) { /* best effort */ }
+    document.body.classList.add("authPending");
+    showLoginPage(message || "The required shared host is unavailable. Backstage is locked; browser-only mode is disabled.");
+    renderApiConnectionPanel(message || "The required shared host is unavailable. Backstage is locked.");
+  }
+
   function saveState() {
     state.updated = Date.now();
     const localSnapshot = JSON.stringify(state);
 
-    // Keep a local cache as a fallback, even when the host is the main database.
-    try {
-      localStorage.setItem(STORAGE_KEY, localSnapshot);
-    } catch (error) {
-      console.warn("The browser cache could not be updated; host storage may still work.", error);
+    // The published site never saves event data as an alternate browser database.
+    if (!window.BACKSTAGE_STATIC_SITE) {
+      try {
+        localStorage.setItem(STORAGE_KEY, localSnapshot);
+      } catch (error) {
+        console.warn("The local cache could not be updated; host storage may still work.", error);
+      }
     }
     $("lastSaved").textContent = new Date(state.updated).toLocaleString();
 
     if (!serverStorageEnabled) {
-      $("saveStatus").textContent = hostConnectionProblem ? "HOST UNAVAILABLE · LOCAL ONLY" : "Saved in this browser";
-      $("saveStatus").className = hostConnectionProblem ? "pill red" : "pill green";
+      if (window.BACKSTAGE_STATIC_SITE) {
+        $("saveStatus").textContent = "HOST REQUIRED · LOCKED";
+        $("saveStatus").className = "pill red";
+        lockStaticSiteAfterHostFailure("The shared host is not connected. Backstage is locked; it will not save in this browser. Check the API and sign in again.");
+      } else {
+        $("saveStatus").textContent = hostConnectionProblem ? "HOST UNAVAILABLE · LOCAL ONLY" : "Saved in this browser";
+        $("saveStatus").className = hostConnectionProblem ? "pill red" : "pill green";
+      }
       return;
     }
 
@@ -609,8 +671,12 @@
         hostConnectionProblem = true;
         $("saveStatus").textContent = "HOST SAVE FAILED";
         $("saveStatus").className = "pill red";
-        showToast("Host save failed. The browser cache is not shared—check the host connection and export a backup.");
         console.error("Could not save to the host computer.", error);
+        if (window.BACKSTAGE_STATIC_SITE) {
+          lockStaticSiteAfterHostFailure("The required host save failed. Backstage is now locked instead of switching to browser-only mode. Fix the host connection, then sign in again. Unsaved edits may not have reached the host.");
+        } else {
+          showToast("Host save failed. The browser cache is not shared—check the host connection and export a backup.");
+        }
       });
     }, 250);
   }
@@ -1335,6 +1401,78 @@
     $("recordId").textContent = (state.eventId || "NEW").slice(0, 8).toUpperCase();
   }
 
+  async function logoutFromBackstage() {
+    const logoutButton = $("logoutBtn");
+    if (logoutButton?.disabled) return;
+
+    if (logoutButton) {
+      logoutButton.disabled = true;
+      logoutButton.innerHTML = '<span class="logoutSpinner" aria-hidden="true"></span><span>Signing out…</span>';
+    }
+    const app = document.querySelector(".app");
+    if (app) app.inert = true;
+    document.body.classList.add("signingOut");
+
+    let password = activePassword;
+    try { password = sessionStorage.getItem(PASSWORD_KEY) || activePassword || ""; } catch (_) { /* use in-memory password */ }
+    let warning = "";
+
+    // Flush the latest draft before removing the shared password. Wait briefly
+    // for any debounced/in-flight save, then send one final authenticated write.
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    if (serverStorageEnabled && password) {
+      try {
+        await Promise.race([
+          saveQueue.catch(() => undefined),
+          new Promise((resolve) => setTimeout(resolve, 1500)),
+        ]);
+        state.updated = Date.now();
+        const snapshot = JSON.stringify(state);
+        const endpoint = window.BACKSTAGE_STATIC_SITE ? `${FIXED_API_BASE_URL}/api/state` : apiUrl("/api/state");
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        let response;
+        try {
+          response = await fetch(endpoint, {
+            method: "PUT",
+            cache: "no-store",
+            signal: controller.signal,
+            headers: {
+              "Content-Type": "application/json",
+              "X-Theatre-Password": password,
+            },
+            body: snapshot,
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
+        if (!response.ok) throw new Error(`The host returned ${response.status}.`);
+      } catch (error) {
+        console.warn("Could not confirm the final save during logout.", error);
+        warning = "Signed out, but Backstage could not confirm the latest changes were saved. Sign in again and verify the event record.";
+      }
+    } else if (window.BACKSTAGE_STATIC_SITE) {
+      warning = "Signed out. The host was not connected, so verify that your latest changes were saved before leaving.";
+    }
+
+    activePassword = "";
+    reloadAfterLogin = false;
+    try {
+      sessionStorage.removeItem(PASSWORD_KEY);
+      sessionStorage.removeItem(SIGNOUT_NOTICE_KEY);
+      if (warning) sessionStorage.setItem(SIGNOUT_NOTICE_KEY, warning);
+    } catch (_) { /* sign out continues even if session storage is unavailable */ }
+
+    // Clear the rendered page and in-memory record before navigating back to
+    // the login gate. The next load starts locked and cannot use a local cache.
+    state = createBlankState();
+    serverStorageEnabled = false;
+    document.body.classList.add("authPending");
+    showLoginPage(warning);
+    window.location.reload();
+  }
+
   function setupEventListeners() {
     bindAutoSaveFields(eventFieldMap, "event");
     bindAutoSaveFields(handoffFieldMap, "shiftDraft");
@@ -1361,14 +1499,15 @@
     $("view-settings").addEventListener("submit", handleSettingsSubmit);
     $("view-settings").addEventListener("change", handleSettingsFieldChange);
     $("view-settings").addEventListener("click", handleSettingsClick);
-    $("connectHostBtn").addEventListener("click", connectToHost);
-    $("disconnectHostBtn").addEventListener("click", disconnectFromHost);
+    if ($("connectHostBtn")) $("connectHostBtn").addEventListener("click", connectToHost);
+    if ($("disconnectHostBtn")) $("disconnectHostBtn").addEventListener("click", disconnectFromHost);
     $("incidentSearch").addEventListener("input", renderIncidents);
     $("incidentStatusFilter").addEventListener("change", renderIncidents);
     $("incidentPriorityFilter").addEventListener("change", renderIncidents);
     document.addEventListener("click", handleDocumentClick);
 
     $("newEventBtn").addEventListener("click", startNewEvent);
+    $("logoutBtn")?.addEventListener("click", logoutFromBackstage);
     $("printBtn").addEventListener("click", () => window.print());
     $("exportBtn").addEventListener("click", exportBackup);
     $("importBtn").addEventListener("click", () => $("importFile").click());
@@ -1384,28 +1523,55 @@
   // Load the host's saved event first (when available), then wire up the UI.
   // ===========================================================================
   async function initializeApp() {
-    // On GitHub Pages, show the sign-in screen before exposing the technician
-    // interface. Validate any tab-session password against the host; otherwise
-    // require a successful sign-in before loading the shared record.
-    if (window.BACKSTAGE_STATIC_SITE) {
-      let rememberedPassword = "";
-      try { rememberedPassword = sessionStorage.getItem(PASSWORD_KEY) || ""; } catch (_) { /* storage may be disabled */ }
-      let needsLogin = !rememberedPassword;
+    const isPublishedSite = Boolean(window.BACKSTAGE_STATIC_SITE);
+
+    if (isPublishedSite) {
+      // Fail closed from first paint. No checklist, incident data, or settings are
+      // exposed until the fixed remote API authenticates and supplies the record.
+      document.body.classList.add("authPending");
+      let password = "";
       let loginHint = "Sign in to access the shared theatre record.";
-      if (rememberedPassword) {
-        const rememberedCheck = await validateAccessPassword(rememberedPassword);
-        if (!rememberedCheck.ok) {
-          needsLogin = true;
-          loginHint = rememberedCheck.message === "Incorrect password. Check it and try again."
-            ? "Your saved sign-in has expired. Please sign in again."
-            : rememberedCheck.message;
+      try {
+        const signoutNotice = sessionStorage.getItem(SIGNOUT_NOTICE_KEY) || "";
+        sessionStorage.removeItem(SIGNOUT_NOTICE_KEY);
+        if (signoutNotice) loginHint = signoutNotice;
+        password = sessionStorage.getItem(PASSWORD_KEY) || "";
+      } catch (_) { /* login again if session storage is unavailable */ }
+
+      if (password) {
+        const rememberedCheck = await validateAccessPassword(password);
+        if (rememberedCheck.ok) {
+          activePassword = password;
+          hideLoginPage();
+        } else {
+          password = "";
+          activePassword = "";
           try { sessionStorage.removeItem(PASSWORD_KEY); } catch (_) { /* best effort */ }
+          loginHint = rememberedCheck.message || "Please sign in to continue.";
         }
       }
-      if (needsLogin) await requestPasswordLogin(loginHint);
+
+      while (true) {
+        if (!password) {
+          password = await requestPasswordLogin(loginHint);
+          activePassword = password || "";
+        }
+        try {
+          state = await loadInitialState();
+          if (!serverStorageEnabled) throw new Error("The required shared host did not connect.");
+          break;
+        } catch (error) {
+          password = "";
+          activePassword = "";
+          try { sessionStorage.removeItem(PASSWORD_KEY); } catch (_) { /* best effort */ }
+          hostConnectionProblem = true;
+          loginHint = `Cannot access ${FIXED_API_BASE_URL}. Browser-only mode is disabled. Check the API server and Cloudflare Tunnel, then sign in again. ${error.message || ""}`.trim();
+        }
+      }
+    } else {
+      state = await loadInitialState();
     }
 
-    state = await loadInitialState();
     fillEventFields();
     fillHandoffDraft();
     setupEventListeners();
@@ -1422,7 +1588,24 @@
         showToast("Could not connect to host storage. Changes are local-only; reload after checking the host connection.");
       }
     }
+
+    // Remove the first-paint lock only after the remote record has loaded.
+    if (isPublishedSite && serverStorageEnabled) document.body.classList.remove("authPending");
+    renderApiConnectionPanel();
   }
+
+  window.addEventListener("pageshow", (event) => {
+    if (!window.BACKSTAGE_STATIC_SITE || !event.persisted) return;
+    let hasPassword = false;
+    try { hasPassword = Boolean(sessionStorage.getItem(PASSWORD_KEY)); } catch (_) { /* lock by default */ }
+    if (!hasPassword) {
+      activePassword = "";
+      serverStorageEnabled = false;
+      state = createBlankState();
+      document.body.classList.add("authPending");
+      showLoginPage("Your session is no longer active. Sign in again to access the shared theatre record.");
+    }
+  });
 
   setupLoginPage();
   initializeApp();
