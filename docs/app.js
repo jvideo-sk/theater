@@ -64,12 +64,11 @@
 
   // ===========================================================================
   // APP STATE AND STORAGE
-  // When served by server.js, records are stored on the host computer and shared
-  // by browsers using that server. When opened as a plain HTML file, the app
-  // falls back to browser storage for quick/offline use.
+  // The published app requires a host account session before exposing shared event data.
   // ===========================================================================
   const STORAGE_KEY = "backstage-tech-handoff-v1";
-  const PASSWORD_KEY = "backstage-host-password";
+  const SESSION_KEY = "backstage-technician-session-v2";
+  const SESSION_USER_KEY = "backstage-technician-user-v2";
   const SIGNOUT_NOTICE_KEY = "backstage-signout-notice";
   const API_BASE_KEY = "backstage-host-api-base-v1";
   const FIXED_API_BASE_URL = "https://theatre-api.jvideo.dev";
@@ -79,7 +78,8 @@
   let saveQueue = Promise.resolve();
   let serverStorageEnabled = false;
   let hostConnectionProblem = false;
-  let activePassword = "";
+  let activeSessionToken = "";
+  let activeUser = null;
   let reloadAfterLogin = false;
   let state = createBlankState();
 
@@ -280,8 +280,8 @@
     badge.className = `pill ${serverStorageEnabled ? "green" : (hostConnectionProblem ? "red" : "amber")}`;
   }
 
-  // Shared-host sign-in is a branded full-page form, not a browser prompt.
-  // The shared password stays in sessionStorage for this browser tab only.
+  // Individual technician accounts. Access tokens are short-lived server-issued
+  // bearer tokens stored in this browser tab only; passwords are never retained.
   let loginPromise = null;
   let loginResolver = null;
 
@@ -302,7 +302,7 @@
     document.body.classList.add("loginOpen");
     const app = document.querySelector(".app");
     if (app) app.inert = true;
-    window.requestAnimationFrame(() => $("loginPassword")?.focus());
+    window.requestAnimationFrame(() => $("loginUsername")?.focus());
   }
 
   function hideLoginPage() {
@@ -311,61 +311,69 @@
     document.body.classList.remove("loginOpen");
     const app = document.querySelector(".app");
     if (app) app.inert = false;
-    const passwordInput = $("loginPassword");
-    if (passwordInput) passwordInput.value = "";
+    if ($("loginPassword")) $("loginPassword").value = "";
     setLoginMessage("");
   }
 
-  function requestPasswordLogin(message) {
+  function requestAccountLogin(message) {
     if (loginPromise) return loginPromise;
     loginPromise = new Promise((resolve) => { loginResolver = resolve; });
-    const defaultPrompt = "Sign in to access the shared theatre record.";
-    showLoginPage(message && message !== defaultPrompt ? message : "");
+    showLoginPage(message || "Sign in with your individual technician account.");
     return loginPromise;
   }
 
-  function finishPasswordLogin(password) {
+  function finishAccountLogin(token) {
     const resolve = loginResolver;
     loginPromise = null;
     loginResolver = null;
     hideLoginPage();
-    if (typeof resolve === "function") resolve(password);
+    if (typeof resolve === "function") resolve(token);
   }
 
-  async function validateAccessPassword(password) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
+  function clearAccountSession() {
+    activeSessionToken = "";
+    activeUser = null;
     try {
-      const response = await fetch(apiUrl("/api/state"), {
-        method: "GET",
-        cache: "no-store",
-        signal: controller.signal,
-        headers: { "X-Theatre-Password": password },
-      });
-      if (response.status === 401) {
-        return { ok: false, message: "Incorrect password. Check it and try again." };
-      }
+      sessionStorage.removeItem(SESSION_KEY);
+      sessionStorage.removeItem(SESSION_USER_KEY);
+    } catch (_) { /* browser session storage may be unavailable */ }
+    updateSessionIdentity();
+  }
+
+  function updateSessionIdentity() {
+    const nameNode = $("sessionUserName");
+    const roleNode = $("sessionUserRole");
+    const avatarNode = $("sessionAvatar");
+    const adminPanel = $("usersAdminPanel");
+    if (nameNode) nameNode.textContent = activeUser?.displayName || "Signed-in technician";
+    if (roleNode) roleNode.textContent = activeUser ? `${activeUser.username} · ${activeUser.role === "admin" ? "Administrator" : "Technician"}` : "Not signed in";
+    if (avatarNode) {
+      const initials = String(activeUser?.displayName || "BT").split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+      avatarNode.textContent = initials || "BT";
+    }
+    if (adminPanel) adminPanel.hidden = activeUser?.role !== "admin";
+  }
+
+  async function validateSessionToken(token) {
+    const headers = new Headers({ "X-Theatre-Session": token });
+    try {
+      const response = await fetch(apiUrl("/api/session"), { method: "GET", cache: "no-store", headers });
+      if (response.status === 401) return { ok: false, message: "Your session expired. Please sign in again." };
       if (!response.ok) {
         let detail = "";
-        try { detail = (await response.json()).error || ""; } catch (_) { /* ignore non-JSON replies */ }
+        try { detail = (await response.json()).error || ""; } catch (_) { /* ignore non-JSON response */ }
         return { ok: false, message: detail || `The host returned an error (${response.status}).` };
       }
-      return { ok: true, message: "" };
+      const payload = await response.json();
+      return { ok: true, user: payload.user, expiresAt: payload.expiresAt };
     } catch (error) {
-      const detail = error?.name === "AbortError"
-        ? "The theatre host did not respond within 12 seconds."
-        : `Couldn't reach ${getApiBaseUrl() || window.location.origin}. Check that the host and Cloudflare Tunnel are running and that the website origin is allowed.`;
-      return { ok: false, message: detail };
-    } finally {
-      clearTimeout(timeoutId);
+      return { ok: false, message: error?.name === "AbortError" ? "The theatre host did not respond." : `Couldn't reach ${FIXED_API_BASE_URL}. Check the API server and Cloudflare Tunnel.` };
     }
   }
 
   function setupLoginPage() {
-    // The published GitHub Pages app must use the shared host; don't offer a
-    // local-only bypass that would make a visitor think their changes were shared.
     const cancelButton = $("loginCancel");
-    if (cancelButton && window.BACKSTAGE_STATIC_SITE) cancelButton.style.display = "none";
+    if (cancelButton) cancelButton.style.display = "none";
 
     $("passwordToggle")?.addEventListener("click", () => {
       const input = $("loginPassword");
@@ -381,50 +389,61 @@
 
     $("loginForm").addEventListener("submit", async (event) => {
       event.preventDefault();
+      const username = String($("loginUsername").value || "").trim().toLowerCase();
       const password = $("loginPassword").value;
-      if (!password) {
-        setLoginMessage("Enter the shared access password to continue.");
-        $("loginPassword").focus();
+      if (!username || !password) {
+        setLoginMessage("Enter your username and password.");
+        (username ? $("loginPassword") : $("loginUsername")).focus();
         return;
       }
-
       const submitButton = $("loginSubmit");
       const originalLabel = submitButton.innerHTML;
       submitButton.disabled = true;
       submitButton.setAttribute("aria-busy", "true");
-      submitButton.textContent = "Checking password…";
+      submitButton.textContent = "Signing in…";
       setLoginMessage("");
-      const result = await validateAccessPassword(password);
-      submitButton.disabled = false;
-      submitButton.removeAttribute("aria-busy");
-      submitButton.innerHTML = originalLabel;
-
-      if (!result.ok) {
-        setLoginMessage(result.message);
-        $("loginPassword").focus();
-        return;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      try {
+        const response = await fetch(apiUrl("/api/login"), {
+          method: "POST", cache: "no-store", signal: controller.signal,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        let payload = {};
+        try { payload = await response.json(); } catch (_) { /* show generic failure */ }
+        if (!response.ok) {
+          setLoginMessage(payload.error || (response.status === 401 ? "Username or password is incorrect." : `Sign-in failed (${response.status}).`));
+          $("loginPassword").focus();
+          return;
+        }
+        activeSessionToken = payload.token;
+        activeUser = payload.user;
+        try {
+          sessionStorage.setItem(SESSION_KEY, activeSessionToken);
+          sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(activeUser));
+        } catch (_) { /* token remains in memory for this tab */ }
+        updateSessionIdentity();
+        if (reloadAfterLogin) {
+          // A host failure locked the published UI; after re-authentication, reload
+          // the canonical host state before exposing the dashboard again.
+          reloadAfterLogin = false;
+          window.location.reload();
+          return;
+        }
+        finishAccountLogin(activeSessionToken);
+      } catch (error) {
+        setLoginMessage(error?.name === "AbortError" ? "Sign-in timed out. Check the host and try again." : `Could not reach ${FIXED_API_BASE_URL}. Check the server and Cloudflare Tunnel.`);
+      } finally {
+        clearTimeout(timeoutId);
+        submitButton.disabled = false;
+        submitButton.removeAttribute("aria-busy");
+        submitButton.innerHTML = originalLabel;
       }
-
-      activePassword = password;
-      try { sessionStorage.setItem(PASSWORD_KEY, password); } catch (_) { /* keep password in memory for this tab */ }
-      if (reloadAfterLogin) {
-        // Reload from the host's canonical record after connectivity is restored.
-        // Any edits that the host did not accept are deliberately not revived locally.
-        window.location.reload();
-        return;
-      }
-      finishPasswordLogin(password);
-    });
-
-    if (cancelButton) cancelButton.addEventListener("click", () => {
-      try { sessionStorage.removeItem(PASSWORD_KEY); } catch (_) { /* best effort */ }
-      finishPasswordLogin(null);
     });
   }
 
   async function hostRequest(url, options = {}) {
-    // On GitHub Pages, no input, localStorage value, or stale setting can change
-    // the API hostname. Only API paths are allowed through this helper.
     if (window.BACKSTAGE_STATIC_SITE && !String(url).startsWith("/api/")) {
       throw new Error("The published site may contact only its configured theatre API.");
     }
@@ -432,36 +451,37 @@
       ? `${FIXED_API_BASE_URL}${url}`
       : (url.startsWith("/api/") ? apiUrl(url) : url);
     const headers = new Headers(options.headers || {});
-    let password = activePassword;
-    try { password = sessionStorage.getItem(PASSWORD_KEY) || activePassword || ""; } catch (_) { /* use the in-memory session */ }
-    if (password) headers.set("X-Theatre-Password", password);
-
+    const readToken = () => {
+      try { return sessionStorage.getItem(SESSION_KEY) || activeSessionToken || ""; }
+      catch (_) { return activeSessionToken || ""; }
+    };
+    let token = readToken();
+    if (token) headers.set("X-Theatre-Session", token);
     let response = await fetch(targetUrl, { cache: "no-store", ...options, headers });
-    while (response.status === 401) {
-      const hadPassword = Boolean(headers.get("X-Theatre-Password"));
-      try { sessionStorage.removeItem(PASSWORD_KEY); } catch (_) { /* best effort */ }
-      activePassword = "";
-      headers.delete("X-Theatre-Password");
 
-      password = await requestPasswordLogin(hadPassword
-        ? "That password was not accepted. Check it and try again."
-        : "Sign in to access the shared theatre record.");
-      if (password === null) {
-        const error = new Error("Sign-in cancelled. Shared host storage is not connected.");
+    if (response.status === 401) {
+      clearAccountSession();
+      const freshToken = await requestAccountLogin("Your session expired or was revoked. Sign in again to continue.");
+      if (!freshToken) {
+        const error = new Error("Sign-in is required to access the shared theatre record.");
         error.hostUnavailable = true;
         throw error;
       }
-
-      headers.set("X-Theatre-Password", password);
+      token = freshToken;
+      headers.set("X-Theatre-Session", token);
       response = await fetch(targetUrl, { cache: "no-store", ...options, headers });
+      if (response.status === 401) {
+        clearAccountSession();
+        showLoginPage("Your account session could not be verified. Please sign in again.");
+      }
     }
 
     if (!response.ok) {
       let detail = "";
-      try { detail = (await response.json()).error || ""; } catch (_) { /* response may not be JSON */ }
+      try { detail = (await response.json()).error || ""; } catch (_) { /* response may be non-JSON */ }
       const error = new Error(detail || `Host request failed (${response.status}).`);
       error.status = response.status;
-      error.hostUnavailable = true;
+      error.hostUnavailable = response.status >= 500 || response.status === 401;
       throw error;
     }
     return response;
@@ -524,7 +544,7 @@
 
     const previousBase = getApiBaseUrl();
     if (candidate !== previousBase) {
-      try { sessionStorage.removeItem(PASSWORD_KEY); } catch (_) { /* unavailable in private mode */ }
+      try { sessionStorage.removeItem(SESSION_KEY); } catch (_) { /* unavailable in private mode */ }
     }
     try { localStorage.setItem(API_BASE_KEY, candidate); }
     catch (_) { showToast("Could not save the host URL in this browser."); return; }
@@ -588,7 +608,7 @@
     }
     if (!window.confirm("Disconnect this browser from shared host storage? Future edits will be saved only in this browser until you reconnect.")) return;
     try { localStorage.removeItem(API_BASE_KEY); } catch (_) { /* best effort */ }
-    try { sessionStorage.removeItem(PASSWORD_KEY); } catch (_) { /* best effort */ }
+    try { sessionStorage.removeItem(SESSION_KEY); } catch (_) { /* best effort */ }
     serverStorageEnabled = false;
     hostConnectionProblem = false;
     $("saveStatus").textContent = "Saved in this browser";
@@ -618,8 +638,7 @@
     serverStorageEnabled = false;
     hostConnectionProblem = true;
     reloadAfterLogin = true;
-    activePassword = "";
-    try { sessionStorage.removeItem(PASSWORD_KEY); } catch (_) { /* best effort */ }
+    clearAccountSession();
     document.body.classList.add("authPending");
     showLoginPage(message || "The required shared host is unavailable. Backstage is locked; browser-only mode is disabled.");
     renderApiConnectionPanel(message || "The required shared host is unavailable. Backstage is locked.");
@@ -819,6 +838,7 @@
       savedAt: Date.now(),
       event: { ...state.event },
       ...draft,
+      createdBy: activeUser ? { username: activeUser.username, displayName: activeUser.displayName } : null,
       eventId: state.eventId,
       reviewed: false,
       reviewedBy: "",
@@ -838,7 +858,7 @@
     const status = entry.event?.status || "Phase not recorded";
     const recipient = entry.incoming?.trim() || "Incoming technician not named";
     const acknowledgement = entry.reviewed
-      ? `<span class="ackStatus">✓ Read by ${escapeHtml(entry.reviewedBy || "incoming technician")} · ${escapeHtml(formatDateTime(entry.reviewedAt))}</span>`
+      ? `<span class="ackStatus">✓ Read by ${escapeHtml(entry.reviewedBy || "incoming technician")}${entry.reviewedByUsername ? ` (@${escapeHtml(entry.reviewedByUsername)})` : ""} · ${escapeHtml(formatDateTime(entry.reviewedAt))}</span>`
       : `<span class="pill amber">Not acknowledged</span>`;
     const body = [
       renderTextBlock("Current situation", entry.summary),
@@ -856,6 +876,7 @@
           <div>
             <div class="historyWho">${escapeHtml(entry.outgoing || "Technician not named")} → ${escapeHtml(recipient)}</div>
             <div class="historyMeta">Saved ${escapeHtml(formatDateTime(entry.savedAt))} · ${escapeHtml(entry.event?.name || "Untitled event")} · ${escapeHtml(entry.event?.spaces || "Spaces not listed")}</div>
+            ${entry.createdBy?.displayName ? `<div class="historyMeta">Recorded by ${escapeHtml(entry.createdBy.displayName)} (@${escapeHtml(entry.createdBy.username || "unknown")})</div>` : ""}
             <div class="historyMeta">Shift time: ${escapeHtml(entry.shiftEnd || "Not given")} · Next shift: ${escapeHtml(entry.nextStart || "Not given")} · Event phase: ${escapeHtml(status)}</div>
           </div>
           <span class="pill ${priorityClass(priority)}">${escapeHtml(priority)}</span>
@@ -905,13 +926,12 @@
       if (!confirmed) return;
       entry.reviewed = false;
       entry.reviewedBy = "";
+      entry.reviewedByUsername = "";
       entry.reviewedAt = null;
     } else {
-      const suggestedName = entry.incoming || state.shiftDraft.incoming || "";
-      const reviewer = window.prompt("Who has read this handoff? Enter name or initials:", suggestedName);
-      if (reviewer === null || !reviewer.trim()) return;
       entry.reviewed = true;
-      entry.reviewedBy = reviewer.trim();
+      entry.reviewedBy = activeUser?.displayName || "Signed-in technician";
+      entry.reviewedByUsername = activeUser?.username || "";
       entry.reviewedAt = Date.now();
     }
 
@@ -1188,6 +1208,7 @@
       priority: $("incidentSeverity").value,
       location: $("incidentLocation").value.trim(),
       reportedBy: $("incidentReportedBy").value.trim(),
+      createdBy: activeUser ? { username: activeUser.username, displayName: activeUser.displayName } : null,
       details,
       action: $("incidentAction").value.trim(),
       owner: $("incidentOwner").value.trim(),
@@ -1201,6 +1222,7 @@
 
     state.incidents.unshift(incident);
     event.target.reset();
+    if ($("incidentReportedBy") && activeUser) $("incidentReportedBy").value = activeUser.displayName;
     $("incidentCategory").value = state.settings.incidentCategories.includes("Technical / equipment")
       ? "Technical / equipment" : state.settings.incidentCategories[0];
     $("incidentSeverity").value = state.settings.incidentPriorities.includes("Medium")
@@ -1219,11 +1241,12 @@
       renderIncidentDetail("What happened", incident.details),
       renderIncidentDetail("Location / equipment", incident.location),
       renderIncidentDetail("Reported by", incident.reportedBy),
+      renderIncidentDetail("Logged by account", incident.createdBy?.displayName ? `${incident.createdBy.displayName} (@${incident.createdBy.username || "unknown"})` : ""),
       renderIncidentDetail("Action taken", incident.action),
       renderIncidentDetail("Follow-up owner / notified", incident.owner),
     ].filter(Boolean).join("");
     const resolvedText = incident.resolved
-      ? `Resolved by ${escapeHtml(incident.resolvedBy || "staff member")} · ${escapeHtml(formatDateTime(incident.resolvedAt))}`
+      ? `Resolved by ${escapeHtml(incident.resolvedBy || "staff member")}${incident.resolvedByUsername ? ` (@${escapeHtml(incident.resolvedByUsername)})` : ""} · ${escapeHtml(formatDateTime(incident.resolvedAt))}`
       : "Follow-up remains open";
 
     return `
@@ -1285,14 +1308,14 @@
     if (!incident) return;
 
     if (!incident.resolved) {
-      const name = window.prompt("Who is resolving this incident? Enter name or initials:", state.shiftDraft.outgoing || "");
-      if (name === null) return;
-      incident.resolvedBy = name.trim() || "Staff member";
+      incident.resolvedBy = activeUser?.displayName || "Signed-in technician";
+      incident.resolvedByUsername = activeUser?.username || "";
       incident.resolvedAt = Date.now();
       incident.resolved = true;
     } else {
       incident.resolved = false;
       incident.resolvedBy = "";
+      incident.resolvedByUsername = "";
       incident.resolvedAt = null;
     }
     renderIncidents();
@@ -1430,7 +1453,6 @@
   async function logoutFromBackstage() {
     const logoutButton = $("logoutBtn");
     if (logoutButton?.disabled) return;
-
     if (logoutButton) {
       logoutButton.disabled = true;
       logoutButton.innerHTML = '<span class="logoutSpinner" aria-hidden="true"></span><span>Signing out…</span>';
@@ -1439,64 +1461,166 @@
     if (app) app.inert = true;
     document.body.classList.add("signingOut");
 
-    let password = activePassword;
-    try { password = sessionStorage.getItem(PASSWORD_KEY) || activePassword || ""; } catch (_) { /* use in-memory password */ }
+    const token = activeSessionToken || (() => { try { return sessionStorage.getItem(SESSION_KEY) || ""; } catch (_) { return ""; } })();
     let warning = "";
-
-    // Flush the latest draft before removing the shared password. Wait briefly
-    // for any debounced/in-flight save, then send one final authenticated write.
     clearTimeout(saveTimer);
     saveTimer = null;
-    if (serverStorageEnabled && password) {
+    if (serverStorageEnabled && token) {
       try {
-        await Promise.race([
-          saveQueue.catch(() => undefined),
-          new Promise((resolve) => setTimeout(resolve, 1500)),
-        ]);
+        await Promise.race([saveQueue.catch(() => undefined), new Promise((resolve) => setTimeout(resolve, 1500))]);
         state.updated = Date.now();
         const snapshot = JSON.stringify(state);
         const endpoint = window.BACKSTAGE_STATIC_SITE ? `${FIXED_API_BASE_URL}/api/state` : apiUrl("/api/state");
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 8000);
-        let response;
         try {
-          response = await fetch(endpoint, {
-            method: "PUT",
-            cache: "no-store",
-            signal: controller.signal,
-            headers: {
-              "Content-Type": "application/json",
-              "X-Theatre-Password": password,
-            },
+          const response = await fetch(endpoint, {
+            method: "PUT", cache: "no-store", signal: controller.signal,
+            headers: { "Content-Type": "application/json", "X-Theatre-Session": token },
             body: snapshot,
           });
-        } finally {
-          clearTimeout(timeoutId);
-        }
-        if (!response.ok) throw new Error(`The host returned ${response.status}.`);
+          if (!response.ok) throw new Error(`The host returned ${response.status}.`);
+        } finally { clearTimeout(timeoutId); }
       } catch (error) {
         console.warn("Could not confirm the final save during logout.", error);
-        warning = "Signed out, but Backstage could not confirm the latest changes were saved. Sign in again and verify the event record.";
+        warning = "Signed out, but the host could not confirm the latest save. Sign in again and verify the event record.";
       }
-    } else if (window.BACKSTAGE_STATIC_SITE) {
-      warning = "Signed out. The host was not connected, so verify that your latest changes were saved before leaving.";
+      try {
+        const endpoint = window.BACKSTAGE_STATIC_SITE ? `${FIXED_API_BASE_URL}/api/logout` : apiUrl("/api/logout");
+        await fetch(endpoint, { method: "POST", cache: "no-store", headers: { "X-Theatre-Session": token } });
+      } catch (_) { /* clear browser credentials even if logout endpoint is unavailable */ }
     }
 
-    activePassword = "";
-    reloadAfterLogin = false;
+    clearAccountSession();
     try {
-      sessionStorage.removeItem(PASSWORD_KEY);
       sessionStorage.removeItem(SIGNOUT_NOTICE_KEY);
       if (warning) sessionStorage.setItem(SIGNOUT_NOTICE_KEY, warning);
-    } catch (_) { /* sign out continues even if session storage is unavailable */ }
-
-    // Clear the rendered page and in-memory record before navigating back to
-    // the login gate. The next load starts locked and cannot use a local cache.
+    } catch (_) { /* ignore storage failure */ }
+    reloadAfterLogin = false;
     state = createBlankState();
     serverStorageEnabled = false;
     document.body.classList.add("authPending");
-    showLoginPage(warning);
     window.location.reload();
+  }
+
+  async function readApiPayload(response) {
+    let payload = {};
+    try { payload = await response.json(); } catch (_) { /* handled as generic response below */ }
+    if (!response.ok) throw new Error(payload.error || `Request failed (${response.status}).`);
+    return payload;
+  }
+
+  async function refreshAdminUsers() {
+    const panel = $("usersAdminPanel");
+    const list = $("adminUsersList");
+    if (!panel || !list || activeUser?.role !== "admin") return;
+    panel.hidden = false;
+    list.innerHTML = '<div class="empty">Loading technician accounts…</div>';
+    try {
+      const response = await hostRequest("/api/admin/users", { method: "GET" });
+      const payload = await readApiPayload(response);
+      renderAdminUsers(Array.isArray(payload.users) ? payload.users : []);
+    } catch (error) {
+      list.innerHTML = `<div class="empty">Could not load accounts: ${escapeHtml(error.message)}</div>`;
+      showToast(error.message || "Could not load technician accounts.");
+    }
+  }
+
+  function renderAdminUsers(users) {
+    const list = $("adminUsersList");
+    if (!list) return;
+    if (!users.length) {
+      list.innerHTML = '<div class="empty"><strong>No accounts yet</strong>Create the first technician account using the form above.</div>';
+      return;
+    }
+    list.innerHTML = users.map((user) => {
+      const isSelf = user.id === activeUser?.id;
+      const disabled = Boolean(user.disabled);
+      const roleLabel = user.role === "admin" ? "Administrator" : "Technician";
+      const lastLogin = user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : "Never signed in";
+      return `<article class="adminUserRow${disabled ? " isDisabled" : ""}" data-user-row="${escapeHtml(user.id)}">
+        <div class="adminUserName"><strong>${escapeHtml(user.displayName)}</strong><small>@${escapeHtml(user.username)}${isSelf ? " · You" : ""}</small><span class="accountRole">${escapeHtml(roleLabel)}</span></div>
+        <div class="adminUserMeta">Created ${escapeHtml(new Date(user.createdAt).toLocaleDateString())}<br>Last sign-in: ${escapeHtml(lastLogin)}<span class="adminUserStatus pill ${disabled ? "red" : "green"}">${disabled ? "Disabled" : "Active"}</span></div>
+        <div class="adminUserTools"><input class="field" data-user-new-password type="password" minlength="12" maxlength="256" autocomplete="new-password" aria-label="New password for ${escapeHtml(user.username)}" placeholder="Reset password (12+ chars)"><button type="button" class="btn small" data-reset-user="${escapeHtml(user.id)}">Set password</button></div>
+        <div class="adminUserTools accountStatusTools"><button type="button" class="btn small ${disabled ? "primary" : "danger"}" data-toggle-user="${escapeHtml(user.id)}" data-next-disabled="${disabled ? "false" : "true"}" ${isSelf ? "disabled title=\"You cannot disable your current account\"" : ""}>${disabled ? "Enable" : "Disable"}</button></div>
+      </article>`;
+    }).join("");
+  }
+
+  function setupAccountManagement() {
+    const form = $("addUserForm");
+    const list = $("adminUsersList");
+    const refresh = $("refreshUsersBtn");
+    if (refresh) refresh.addEventListener("click", refreshAdminUsers);
+    if (form) form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (activeUser?.role !== "admin") return showToast("Only administrators can create accounts.");
+      const submit = form.querySelector('button[type="submit"]');
+      submit.disabled = true;
+      try {
+        const body = {
+          username: $("newUsername").value.trim().toLowerCase(),
+          displayName: $("newDisplayName").value.trim(),
+          password: $("newUserPassword").value,
+          role: $("newUserRole").value,
+        };
+        const response = await hostRequest("/api/admin/users", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        });
+        const payload = await readApiPayload(response);
+        form.reset();
+        showToast(`Created ${payload.user.displayName}'s account.`);
+        await refreshAdminUsers();
+      } catch (error) {
+        showToast(error.message || "Could not create the account.");
+      } finally { submit.disabled = false; }
+    });
+
+    if (!list) return;
+    list.addEventListener("click", async (event) => {
+      const toggleButton = event.target.closest("[data-toggle-user]");
+      const resetButton = event.target.closest("[data-reset-user]");
+      if (!toggleButton && !resetButton) return;
+      if (activeUser?.role !== "admin") return showToast("Only administrators can manage accounts.");
+      const row = event.target.closest("[data-user-row]");
+      const userId = toggleButton?.dataset.toggleUser || resetButton?.dataset.resetUser;
+      if (!row || !userId) return;
+      const actionButton = toggleButton || resetButton;
+      actionButton.disabled = true;
+      try {
+        if (toggleButton) {
+          const disabled = toggleButton.dataset.nextDisabled === "true";
+          if (!window.confirm(`${disabled ? "Disable" : "Enable"} this technician account?${disabled ? " The technician's active sessions will be revoked." : ""}`)) return;
+          const response = await hostRequest(`/api/admin/users/${encodeURIComponent(userId)}`, {
+            method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ disabled }),
+          });
+          await readApiPayload(response);
+          showToast(disabled ? "Technician account disabled." : "Technician account enabled.");
+          await refreshAdminUsers();
+        } else {
+          const passwordInput = row.querySelector("[data-user-new-password]");
+          const password = passwordInput?.value || "";
+          if (password.length < 12) return showToast("Enter a new password of at least 12 characters.");
+          if (!window.confirm("Set this account's password? The user will need to sign in with the new password.")) return;
+          const response = await hostRequest(`/api/admin/users/${encodeURIComponent(userId)}/password`, {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }),
+          });
+          await readApiPayload(response);
+          if (passwordInput) passwordInput.value = "";
+          if (userId === activeUser?.id) {
+            clearAccountSession();
+            window.location.reload();
+            return;
+          }
+          showToast("Password updated. The technician must sign in again.");
+          await refreshAdminUsers();
+        }
+      } catch (error) {
+        showToast(error.message || "That account action failed.");
+      } finally {
+        if (actionButton.isConnected) actionButton.disabled = false;
+      }
+    });
   }
 
   function setupEventListeners() {
@@ -1549,82 +1673,82 @@
   // ===========================================================================
   async function initializeApp() {
     const isPublishedSite = Boolean(window.BACKSTAGE_STATIC_SITE);
+    if (isPublishedSite) document.body.classList.add("authPending");
+    let token = "";
+    let loginHint = "Sign in with your individual technician account.";
+    try {
+      const signoutNotice = sessionStorage.getItem(SIGNOUT_NOTICE_KEY) || "";
+      sessionStorage.removeItem(SIGNOUT_NOTICE_KEY);
+      if (signoutNotice) loginHint = signoutNotice;
+      token = sessionStorage.getItem(SESSION_KEY) || "";
+    } catch (_) { /* sign in again if storage is unavailable */ }
 
-    if (isPublishedSite) {
-      // Fail closed from first paint. No checklist, incident data, or settings are
-      // exposed until the fixed remote API authenticates and supplies the record.
-      document.body.classList.add("authPending");
-      let password = "";
-      let loginHint = "Sign in to access the shared theatre record.";
+    if (token) {
+      const check = await validateSessionToken(token);
+      if (check.ok) {
+        activeSessionToken = token;
+        activeUser = check.user;
+        updateSessionIdentity();
+        hideLoginPage();
+      } else {
+        clearAccountSession();
+        loginHint = check.message || "Please sign in again.";
+        token = "";
+      }
+    }
+
+    while (true) {
+      if (!token) {
+        token = await requestAccountLogin(loginHint);
+        activeSessionToken = token || "";
+        if (!token) {
+          loginHint = "A technician account is required to continue.";
+          continue;
+        }
+      }
       try {
-        const signoutNotice = sessionStorage.getItem(SIGNOUT_NOTICE_KEY) || "";
-        sessionStorage.removeItem(SIGNOUT_NOTICE_KEY);
-        if (signoutNotice) loginHint = signoutNotice;
-        password = sessionStorage.getItem(PASSWORD_KEY) || "";
-      } catch (_) { /* login again if session storage is unavailable */ }
-
-      if (password) {
-        const rememberedCheck = await validateAccessPassword(password);
-        if (rememberedCheck.ok) {
-          activePassword = password;
-          hideLoginPage();
-        } else {
-          password = "";
-          activePassword = "";
-          try { sessionStorage.removeItem(PASSWORD_KEY); } catch (_) { /* best effort */ }
-          loginHint = rememberedCheck.message || "Please sign in to continue.";
-        }
+        state = await loadInitialState();
+        if (!serverStorageEnabled) throw new Error("The required shared host did not connect.");
+        break;
+      } catch (error) {
+        clearAccountSession();
+        token = "";
+        hostConnectionProblem = true;
+        loginHint = `Cannot load shared data from ${FIXED_API_BASE_URL}. Check the API server and Cloudflare Tunnel. ${error.message || ""}`.trim();
+        showLoginPage(loginHint);
       }
-
-      while (true) {
-        if (!password) {
-          password = await requestPasswordLogin(loginHint);
-          activePassword = password || "";
-        }
-        try {
-          state = await loadInitialState();
-          if (!serverStorageEnabled) throw new Error("The required shared host did not connect.");
-          break;
-        } catch (error) {
-          password = "";
-          activePassword = "";
-          try { sessionStorage.removeItem(PASSWORD_KEY); } catch (_) { /* best effort */ }
-          hostConnectionProblem = true;
-          loginHint = `Cannot access ${FIXED_API_BASE_URL}. Browser-only mode is disabled. Check the API server and Cloudflare Tunnel, then sign in again. ${error.message || ""}`.trim();
-        }
-      }
-    } else {
-      state = await loadInitialState();
     }
 
     fillEventFields();
     fillHandoffDraft();
+    if (activeUser) {
+      if ($("outgoingTech")) {
+        $("outgoingTech").value = activeUser.displayName;
+        state.shiftDraft.outgoing = activeUser.displayName;
+      }
+      if ($("incidentReportedBy") && !$("incidentReportedBy").value) $("incidentReportedBy").value = activeUser.displayName;
+    }
     setupEventListeners();
+    setupAccountManagement();
     renderApp();
+    updateSessionIdentity();
 
+    if (activeUser?.role === "admin") await refreshAdminUsers();
     if (serverStorageEnabled) {
       $("saveStatus").textContent = "Saved on host";
       $("saveStatus").className = "pill green";
-      if (!state.updated) saveState(); // Create the first host record.
-    } else {
-      $("saveStatus").textContent = hostConnectionProblem ? "HOST UNAVAILABLE · LOCAL ONLY" : "Saved in this browser";
-      $("saveStatus").className = hostConnectionProblem ? "pill red" : "pill green";
-      if (hostConnectionProblem) {
-        showToast("Could not connect to host storage. Changes are local-only; reload after checking the host connection.");
-      }
+      if (!state.updated) await saveState({ immediate: true });
     }
-
-    // Remove the first-paint lock only after the remote record has loaded.
     if (isPublishedSite && serverStorageEnabled) document.body.classList.remove("authPending");
     renderApiConnectionPanel();
   }
 
   window.addEventListener("pageshow", (event) => {
     if (!window.BACKSTAGE_STATIC_SITE || !event.persisted) return;
-    let hasPassword = false;
-    try { hasPassword = Boolean(sessionStorage.getItem(PASSWORD_KEY)); } catch (_) { /* lock by default */ }
-    if (!hasPassword) {
-      activePassword = "";
+    let hasToken = false;
+    try { hasToken = Boolean(sessionStorage.getItem(SESSION_KEY)); } catch (_) { /* lock by default */ }
+    if (!hasToken) {
+      clearAccountSession();
       serverStorageEnabled = false;
       state = createBlankState();
       document.body.classList.add("authPending");

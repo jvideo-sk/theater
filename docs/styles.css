@@ -540,3 +540,35 @@ body.authPending .app { display: none !important; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+
+/* Individual technician accounts */
+.loginForm { display: grid; gap: 10px; }
+.loginUsername { margin-bottom: 4px; }
+.loginPasswordLabel { margin-top: 2px; }
+.userAdminPanel[hidden] { display: none !important; }
+.userCreateGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 6px 0 22px; }
+.userCreateActions { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.userCreateActions .helpText { max-width: none; }
+.userAdminListHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); padding-top: 17px; margin-top: 8px; }
+.userAdminListHeader h3 { margin: 0; font-size: 14px; }
+.adminUsersList { display: grid; gap: 10px; margin-top: 12px; }
+.adminUserRow { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(150px, 1fr) minmax(210px, 1.5fr) auto; gap: 10px; align-items: center; padding: 13px; border: 1px solid var(--line); border-radius: 11px; background: #111a24; }
+.adminUserName { min-width: 0; }
+.adminUserName strong { display: block; font-size: 12px; overflow-wrap: anywhere; }
+.adminUserName small, .adminUserMeta { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; overflow-wrap: anywhere; }
+.adminUserStatus { display: inline-flex; margin-top: 6px; }
+.adminUserTools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.adminUserTools .field { min-width: 120px; flex: 1; padding: 7px 8px; font-size: 11px; }
+.adminUserTools .btn { white-space: nowrap; }
+.adminUserRow.isDisabled { opacity: .66; }
+.accountRole { display: inline-flex; font-size: 9px; letter-spacing: .07em; text-transform: uppercase; border: 1px solid var(--line); color: var(--muted); border-radius: 5px; padding: 3px 5px; margin-top: 5px; }
+@media (max-width: 1050px) {
+  .adminUserRow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .adminUserTools { grid-column: 1 / -1; }
+}
+@media (max-width: 600px) {
+  .userCreateGrid { grid-template-columns: 1fr; }
+  .adminUserRow { grid-template-columns: 1fr; }
+  .adminUserTools { grid-column: auto; }
+}
