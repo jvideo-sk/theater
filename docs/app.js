@@ -625,7 +625,7 @@
     renderApiConnectionPanel(message || "The required shared host is unavailable. Backstage is locked.");
   }
 
-  function saveState() {
+  function saveState(options = {}) {
     state.updated = Date.now();
     const localSnapshot = JSON.stringify(state);
 
@@ -644,41 +644,63 @@
         $("saveStatus").textContent = "HOST REQUIRED · LOCKED";
         $("saveStatus").className = "pill red";
         lockStaticSiteAfterHostFailure("The shared host is not connected. Backstage is locked; it will not save in this browser. Check the API and sign in again.");
-      } else {
-        $("saveStatus").textContent = hostConnectionProblem ? "HOST UNAVAILABLE · LOCAL ONLY" : "Saved in this browser";
-        $("saveStatus").className = hostConnectionProblem ? "pill red" : "pill green";
+        return Promise.resolve(false);
       }
-      return;
+      $("saveStatus").textContent = hostConnectionProblem ? "HOST UNAVAILABLE · LOCAL ONLY" : "Saved in this browser";
+      $("saveStatus").className = hostConnectionProblem ? "pill red" : "pill green";
+      return Promise.resolve(true);
     }
 
+    clearTimeout(saveTimer);
+    saveTimer = null;
     $("saveStatus").textContent = "Saving to host…";
     $("saveStatus").className = "pill amber";
+
+    // Button-driven actions can request an immediate, awaitable save. Typing
+    // remains debounced so each keystroke does not become a separate write.
+    if (options.immediate) return persistStateNow();
+    saveTimer = setTimeout(() => { void persistStateNow(); }, 250);
+    return Promise.resolve(true); // queued; callers requiring confirmation use immediate:true
+  }
+
+  async function persistStateNow() {
     clearTimeout(saveTimer);
-    // Debounce rapid keystrokes, then serialize writes so this browser doesn't
-    // accidentally send its own autosaves out of order.
-    saveTimer = setTimeout(() => {
-      const snapshot = JSON.stringify(state);
-      saveQueue = saveQueue.catch(() => undefined).then(async () => {
-        await hostRequest("/api/state", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: snapshot,
-        });
-        hostConnectionProblem = false;
-        $("saveStatus").textContent = "Saved on host";
-        $("saveStatus").className = "pill green";
-      }).catch((error) => {
-        hostConnectionProblem = true;
-        $("saveStatus").textContent = "HOST SAVE FAILED";
-        $("saveStatus").className = "pill red";
-        console.error("Could not save to the host computer.", error);
-        if (window.BACKSTAGE_STATIC_SITE) {
-          lockStaticSiteAfterHostFailure("The required host save failed. Backstage is now locked instead of switching to browser-only mode. Fix the host connection, then sign in again. Unsaved edits may not have reached the host.");
-        } else {
-          showToast("Host save failed. The browser cache is not shared—check the host connection and export a backup.");
-        }
-      });
-    }, 250);
+    saveTimer = null;
+
+    if (!serverStorageEnabled) {
+      if (window.BACKSTAGE_STATIC_SITE) {
+        lockStaticSiteAfterHostFailure("The required host is not connected. Backstage remains locked and will not save a browser-only copy.");
+        return false;
+      }
+      return true;
+    }
+
+    const snapshot = JSON.stringify(state);
+    const request = saveQueue.catch(() => undefined).then(() => hostRequest("/api/state", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: snapshot,
+    }));
+    saveQueue = request;
+
+    try {
+      await request;
+      hostConnectionProblem = false;
+      $("saveStatus").textContent = "Saved on host";
+      $("saveStatus").className = "pill green";
+      return true;
+    } catch (error) {
+      hostConnectionProblem = true;
+      $("saveStatus").textContent = "HOST SAVE FAILED";
+      $("saveStatus").className = "pill red";
+      console.error("Could not save to the host computer.", error);
+      if (window.BACKSTAGE_STATIC_SITE) {
+        lockStaticSiteAfterHostFailure("The required host save failed. Backstage is locked instead of switching to browser-only mode. Fix the host connection, then sign in again. Unsaved edits may not have reached the host.");
+      } else {
+        showToast("Host save failed. The browser cache is not shared—check the host connection and export a backup.");
+      }
+      return false;
+    }
   }
 
   function formatDateTime(timestamp) {
@@ -783,7 +805,7 @@
   // HANDOFF HISTORY
   // Each saved entry is a snapshot of the draft and event phase at that moment.
   // ===========================================================================
-  function saveHandoff() {
+  async function saveHandoff() {
     const draft = state.shiftDraft;
     if (!draft.outgoing.trim() || !draft.summary.trim() || !draft.nextActions.trim()) {
       showToast("Add the outgoing technician, current situation, and next shift priorities first.");
@@ -803,11 +825,12 @@
       reviewedAt: null,
     };
     state.handoffs.unshift(entry);
-    saveState();
     renderHandoffs();
+    const saved = await saveState({ immediate: true });
+    if (!saved) return;
     $("handoffDraftState").textContent = "Saved to history";
     $("handoffDraftState").className = "pill green";
-    showToast("Handoff saved. It has not sent a notification to anyone.");
+    showToast("Handoff saved to the shared host. It has not sent a notification to anyone.");
   }
 
   function renderHandoffCard(entry) {
@@ -841,9 +864,9 @@
         <div class="historyActions">
           ${acknowledgement}
           <span style="flex:1"></span>
-          <button class="btn small" data-load-handoff="${escapeHtml(entry.id)}">Load into draft</button>
-          <button class="btn small" data-ack-handoff="${escapeHtml(entry.id)}">${entry.reviewed ? "Undo acknowledgement" : "Acknowledge read"}</button>
-          <button class="btn small danger" data-delete-handoff="${escapeHtml(entry.id)}">Delete</button>
+          <button type="button" class="btn small" data-load-handoff="${escapeHtml(entry.id)}">Load into draft</button>
+          <button type="button" class="btn small" data-ack-handoff="${escapeHtml(entry.id)}">${entry.reviewed ? "Undo acknowledgement" : "Acknowledge read"}</button>
+          <button type="button" class="btn small danger" data-delete-handoff="${escapeHtml(entry.id)}">Delete</button>
         </div>
       </article>
     `;
@@ -858,21 +881,22 @@
       : `<div class="empty"><strong>No handoffs saved yet</strong>Save a handoff above to start a running shift history for this event.</div>`;
   }
 
-  function loadHandoffIntoDraft(id) {
+  async function loadHandoffIntoDraft(id) {
     const entry = state.handoffs.find((handoff) => handoff.id === id);
     if (!entry) return;
     Object.keys(state.shiftDraft).forEach((key) => {
       if (typeof entry[key] !== "undefined") state.shiftDraft[key] = entry[key];
     });
     fillHandoffDraft();
-    saveState();
+    const saved = await saveState({ immediate: true });
+    if (!saved) return;
     $("handoffDraftState").textContent = "Loaded from history";
     switchView("handoff");
     window.scrollTo({ top: 0, behavior: "smooth" });
     showToast("Handoff loaded into the draft. Saving it again creates a new history entry.");
   }
 
-  function toggleHandoffAcknowledgement(id) {
+  async function toggleHandoffAcknowledgement(id) {
     const entry = state.handoffs.find((handoff) => handoff.id === id);
     if (!entry) return;
 
@@ -891,8 +915,9 @@
       entry.reviewedAt = Date.now();
     }
 
-    saveState();
     renderHandoffs();
+    const saved = await saveState({ immediate: true });
+    if (saved) showToast(entry.reviewed ? "Handoff acknowledgement saved." : "Handoff acknowledgement updated.");
   }
 
   // ===========================================================================
@@ -989,7 +1014,7 @@
     renderApiConnectionPanel();
   }
 
-  function handleSettingsFieldChange(event) {
+  async function handleSettingsFieldChange(event) {
     const field = event.target;
 
     if (field.dataset.sectionField) {
@@ -1002,9 +1027,9 @@
         return;
       }
       section[field.dataset.sectionField] = value;
-      saveState();
       renderChecklist();
-      showToast("Checklist section saved.");
+      const saved = await saveState({ immediate: true });
+      if (saved) showToast("Checklist section saved to the host.");
       return;
     }
 
@@ -1019,9 +1044,9 @@
         return;
       }
       task[field.dataset.taskField] = value;
-      saveState();
       renderChecklist();
-      showToast("Checklist task saved.");
+      const saved = await saveState({ immediate: true });
+      if (saved) showToast("Checklist task saved to the host.");
       return;
     }
 
@@ -1049,14 +1074,14 @@
         if ($("incidentPriorityFilter").value === previousValue) $("incidentPriorityFilter").value = value;
       }
       renderDynamicOptions();
-      saveState();
       renderSettings();
       renderIncidents();
-      showToast("Dropdown option saved.");
+      const saved = await saveState({ immediate: true });
+      if (saved) showToast("Dropdown option saved to the host.");
     }
   }
 
-  function handleSettingsClick(event) {
+  async function handleSettingsClick(event) {
     const deleteSectionButton = event.target.closest("[data-delete-section]");
     if (deleteSectionButton) {
       const sectionId = deleteSectionButton.dataset.deleteSection;
@@ -1065,8 +1090,8 @@
       if (!window.confirm(`Delete section “${section.title}” and its ${section.items.length} task(s)?`)) return;
       section.items.forEach((item) => { delete state.checks[item.id]; });
       state.settings.checklist = getChecklistSections().filter((item) => item.id !== sectionId);
-      saveState(); renderSettings(); renderChecklist();
-      showToast("Checklist section deleted.");
+      renderSettings(); renderChecklist();
+      if (await saveState({ immediate: true })) showToast("Checklist section deleted.");
       return;
     }
 
@@ -1078,8 +1103,8 @@
       if (!task || !window.confirm(`Remove checklist task “${task.label}”?`)) return;
       section.items = section.items.filter((item) => item.id !== task.id);
       delete state.checks[task.id];
-      saveState(); renderSettings(); renderChecklist();
-      showToast("Checklist task removed.");
+      renderSettings(); renderChecklist();
+      if (await saveState({ immediate: true })) showToast("Checklist task removed.");
       return;
     }
 
@@ -1096,12 +1121,12 @@
       if (!window.confirm(`Remove “${removedValue}” from this dropdown? Existing incident history will remain.`)) return;
       list.splice(index, 1);
       renderDynamicOptions();
-      saveState(); renderSettings(); renderIncidents();
-      showToast("Dropdown option removed.");
+      renderSettings(); renderIncidents();
+      if (await saveState({ immediate: true })) showToast("Dropdown option removed.");
     }
   }
 
-  function handleSettingsSubmit(event) {
+  async function handleSettingsSubmit(event) {
     const form = event.target;
 
     if (form.id === "addSectionForm") {
@@ -1110,8 +1135,8 @@
       const description = $("newSectionDescription").value.trim();
       if (!title) return;
       state.settings.checklist.push({ id: createId(), title, description, items: [] });
-      saveState(); form.reset(); renderSettings(); renderChecklist();
-      showToast("Checklist section added.");
+      form.reset(); renderSettings(); renderChecklist();
+      if (await saveState({ immediate: true })) showToast("Checklist section added to the shared checklist.");
       return;
     }
 
@@ -1124,8 +1149,8 @@
       const help = String(formData.get("help") || "").trim();
       if (!section || !label) return;
       section.items.push({ id: createId(), label, help });
-      saveState(); renderSettings(); renderChecklist();
-      showToast("Checklist task added.");
+      form.reset(); renderSettings(); renderChecklist();
+      if (await saveState({ immediate: true })) showToast("Checklist task added to the shared checklist.");
       return;
     }
 
@@ -1141,15 +1166,16 @@
         return;
       }
       list.push(value);
-      renderDynamicOptions(); saveState(); renderSettings(); renderIncidents();
-      showToast("Dropdown option added.");
+      input.value = "";
+      renderDynamicOptions(); renderSettings(); renderIncidents();
+      if (await saveState({ immediate: true })) showToast("Dropdown option added to the shared options.");
     }
   }
 
   // ===========================================================================
   // INCIDENT LOG
   // ===========================================================================
-  function addIncident(event) {
+  async function addIncident(event) {
     event.preventDefault();
     const title = $("incidentTitle").value.trim();
     const details = $("incidentDetail").value.trim();
@@ -1174,14 +1200,14 @@
     };
 
     state.incidents.unshift(incident);
-    saveState();
     event.target.reset();
     $("incidentCategory").value = state.settings.incidentCategories.includes("Technical / equipment")
       ? "Technical / equipment" : state.settings.incidentCategories[0];
     $("incidentSeverity").value = state.settings.incidentPriorities.includes("Medium")
       ? "Medium" : state.settings.incidentPriorities[0];
     renderIncidents();
-    showToast(`${serverStorageEnabled ? "Incident added; saving to host." : "Incident added to this browser."} Remember to notify the responsible person directly.`);
+    const saved = await saveState({ immediate: true });
+    if (saved) showToast("Incident saved to the shared host. Remember to notify the responsible person directly.");
   }
 
   function renderIncidentCard(incident) {
@@ -1213,8 +1239,8 @@
         <div class="incidentMeta">
           <span><span class="pill ${statusClass}">${statusText}</span> ${resolvedText}</span>
           <div class="incidentActions">
-            <button class="btn small" data-resolve-incident="${escapeHtml(incident.id)}">${incident.resolved ? "Reopen" : "Mark resolved"}</button>
-            <button class="btn small danger" data-delete-incident="${escapeHtml(incident.id)}">Delete</button>
+            <button type="button" class="btn small" data-resolve-incident="${escapeHtml(incident.id)}">${incident.resolved ? "Reopen" : "Mark resolved"}</button>
+            <button type="button" class="btn small danger" data-delete-incident="${escapeHtml(incident.id)}">Delete</button>
           </div>
         </div>
       </article>
@@ -1254,7 +1280,7 @@
       : `<div class="empty"><strong>No matching incidents</strong>Log an incident or change the search / filters.</div>`;
   }
 
-  function toggleIncidentResolved(id) {
+  async function toggleIncidentResolved(id) {
     const incident = state.incidents.find((item) => item.id === id);
     if (!incident) return;
 
@@ -1269,9 +1295,9 @@
       incident.resolvedBy = "";
       incident.resolvedAt = null;
     }
-    saveState();
     renderIncidents();
-    showToast(incident.resolved ? "Incident marked resolved." : "Incident reopened.");
+    const saved = await saveState({ immediate: true });
+    if (saved) showToast(incident.resolved ? "Incident marked resolved and saved." : "Incident reopened and saved.");
   }
 
   // ===========================================================================
@@ -1292,7 +1318,7 @@
     $("pageSub").textContent = pageInfo.sub;
   }
 
-  function startNewEvent() {
+  async function startNewEvent() {
     const message = serverStorageEnabled
       ? "Start a new shared event? A JSON backup will download, and the host will archive the previous event. This replaces the current record for everyone using this host."
       : "Start a new event? A JSON backup of the current event will download first. The current event details, checklist checks, handoffs, and incidents will then be cleared from this browser.";
@@ -1306,12 +1332,13 @@
     state.settings = savedSettings; // Configuration belongs to the venue, not one event.
     state.event.status = savedSettings.eventPhases[0];
     state.shiftDraft.priority = savedSettings.handoffPriorities[0];
-    saveState(); // The host archives the previous event before replacing it.
+    const saved = await saveState({ immediate: true }); // Host archives the previous event before replacing it.
+    if (!saved) return;
     fillEventFields();
     fillHandoffDraft();
     renderApp();
     $("handoffDraftState").textContent = "Draft";
-    showToast("New event started. The previous event backup was downloaded.");
+    showToast("New event started on the shared host. The previous event backup was downloaded.");
   }
 
   function exportBackup() {
@@ -1331,7 +1358,7 @@
 
   function importBackup(file) {
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
         const imported = JSON.parse(reader.result);
         const valid = imported && imported.version === 1 && imported.event && Array.isArray(imported.handoffs) && Array.isArray(imported.incidents);
@@ -1343,11 +1370,12 @@
         if (!confirmed) return;
 
         state = normalizeState(imported);
-        saveState();
+        const saved = await saveState({ immediate: true });
+        if (!saved) return;
         fillEventFields();
         fillHandoffDraft();
         renderApp();
-        showToast("Backup imported. Review the current event and latest handoff.");
+        showToast("Backup imported and saved to the shared host. Review the current event and latest handoff.");
       } catch (error) {
         window.alert(`Import failed: ${error.message}`);
       }
@@ -1355,7 +1383,7 @@
     reader.readAsText(file);
   }
 
-  function handleDocumentClick(event) {
+  async function handleDocumentClick(event) {
     const nav = event.target.closest("[data-view]");
     if (nav) switchView(nav.dataset.view);
 
@@ -1371,9 +1399,8 @@
         ? "Delete this handoff entry from the shared host record? This affects everyone using the host and cannot be undone without a backup."
         : "Delete this handoff entry from the current browser record? This cannot be undone unless you have a backup.")) return;
       state.handoffs = state.handoffs.filter((entry) => entry.id !== deleteHandoffButton.dataset.deleteHandoff);
-      saveState();
       renderHandoffs();
-      showToast("Handoff entry deleted.");
+      if (await saveState({ immediate: true })) showToast("Handoff entry deleted from the shared record.");
     }
 
     const resolveButton = event.target.closest("[data-resolve-incident]");
@@ -1385,9 +1412,8 @@
         ? "Delete this incident from the shared host record? This affects everyone using the host and cannot be undone without a backup."
         : "Delete this incident report from the current browser record? This cannot be undone unless you have a backup.")) return;
       state.incidents = state.incidents.filter((incident) => incident.id !== deleteIncidentButton.dataset.deleteIncident);
-      saveState();
       renderIncidents();
-      showToast("Incident deleted.");
+      if (await saveState({ immediate: true })) showToast("Incident deleted from the shared record.");
     }
   }
 
@@ -1479,20 +1505,19 @@
 
     $("saveHandoffBtn").addEventListener("click", saveHandoff);
 
-    $("checklistGrid").addEventListener("change", (event) => {
+    $("checklistGrid").addEventListener("change", async (event) => {
       const checkbox = event.target.closest("[data-check]");
       if (!checkbox) return;
       state.checks[checkbox.dataset.check] = checkbox.checked;
-      saveState();
       renderChecklist();
+      if (await saveState({ immediate: true })) showToast(checkbox.checked ? "Checklist item saved." : "Checklist item unchecked and saved.");
     });
 
-    $("resetChecksBtn").addEventListener("click", () => {
+    $("resetChecksBtn").addEventListener("click", async () => {
       if (!window.confirm("Reset all technician checklist checks for this event? Handoff and incident history will remain.")) return;
       state.checks = {};
-      saveState();
       renderChecklist();
-      showToast("Technician checklist reset.");
+      if (await saveState({ immediate: true })) showToast("Technician checklist reset on the shared host.");
     });
 
     $("incidentForm").addEventListener("submit", addIncident);
@@ -1604,6 +1629,19 @@
       state = createBlankState();
       document.body.classList.add("authPending");
       showLoginPage("Your session is no longer active. Sign in again to access the shared theatre record.");
+    }
+  });
+
+  window.addEventListener("error", (event) => {
+    console.error("Backstage UI error:", event.error || event.message);
+    if (serverStorageEnabled && !document.body.classList.contains("authPending")) {
+      showToast("That action hit an application error. Check the browser console and try again.");
+    }
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    console.error("Backstage action failed:", event.reason);
+    if (serverStorageEnabled && !document.body.classList.contains("authPending")) {
+      showToast(`Action failed: ${event.reason?.message || "unexpected error"}`);
     }
   });
 

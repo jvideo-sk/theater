@@ -46,10 +46,10 @@
       <div>
         <div class="navlabel">Rental operations</div>
         <nav class="nav" aria-label="Main navigation">
-          <button class="active" data-view="handoff"><span aria-hidden="true">⇄</span> Shift handoff <span class="navCount" id="handoffNavCount">0</span></button>
-          <button data-view="checklist"><span aria-hidden="true">☑</span> Tech checklist <span class="navCount" id="checkNavCount">0%</span></button>
-          <button data-view="incidents"><span aria-hidden="true">⚠</span> Incident log <span class="pill amber" id="openIncidentNav">0 open</span></button>
-          <button data-view="settings"><span aria-hidden="true">⚙</span> Customize</button>
+          <button type="button" class="active" data-view="handoff"><span aria-hidden="true">⇄</span> Shift handoff <span class="navCount" id="handoffNavCount">0</span></button>
+          <button type="button" data-view="checklist"><span aria-hidden="true">☑</span> Tech checklist <span class="navCount" id="checkNavCount">0%</span></button>
+          <button type="button" data-view="incidents"><span aria-hidden="true">⚠</span> Incident log <span class="pill amber" id="openIncidentNav">0 open</span></button>
+          <button type="button" data-view="settings"><span aria-hidden="true">⚙</span> Customize</button>
         </nav>
       </div>
 
@@ -67,10 +67,10 @@
           <p class="sub" id="pageSub">Leave the next technician a clear picture of the event, outstanding work, and anything that needs attention.</p>
         </div>
         <div class="actions">
-          <button class="btn" id="newEventBtn">＋ New event</button>
-          <button class="btn" id="printBtn">⎙ Print</button>
-          <button class="btn" id="exportBtn">↓ Export backup</button>
-          <button class="btn" id="importBtn">↑ Import backup</button>
+          <button type="button" class="btn" id="newEventBtn">＋ New event</button>
+          <button type="button" class="btn" id="printBtn">⎙ Print</button>
+          <button type="button" class="btn" id="exportBtn">↓ Export backup</button>
+          <button type="button" class="btn" id="importBtn">↑ Import backup</button>
           <input accept="application/json,.json" class="hidden" id="importFile" type="file">
           <div class="sessionControls" role="group" aria-label="Shared technician session">
             <div class="sessionIdentity">
@@ -133,7 +133,7 @@
             <div class="fieldgroup formSpace"><label class="label" for="commsNotes">People contacted / communication</label><textarea id="commsNotes" placeholder="Who was notified, what was agreed, radio channel, messages still awaiting a reply…"></textarea></div>
             <div class="fieldgroup formSpace"><label class="label" for="nextActions">Next shift priorities *</label><textarea id="nextActions" placeholder="1. First action…&#10;2. Confirm…&#10;3. Follow up with…"></textarea></div>
             <div class="fieldgroup formSpace"><label class="label" for="handoffNotes">Additional notes</label><textarea id="handoffNotes" placeholder="Useful context that doesn't fit above. Keep it factual and concise."></textarea></div>
-            <div class="formFooter"><span class="helpText">Required: outgoing tech, current situation, and next shift priorities.</span><button class="btn primary" id="saveHandoffBtn">Save handoff ↗</button></div>
+            <div class="formFooter"><span class="helpText">Required: outgoing tech, current situation, and next shift priorities.</span><button type="button" class="btn primary" id="saveHandoffBtn">Save handoff ↗</button></div>
           </div>
         </div>
 
@@ -142,7 +142,7 @@
       </section>
 
       <section class="view" id="view-checklist">
-        <div class="sectionhead checklistHead"><div><h2>Technician checklist</h2><p>Use this during takeover, while supporting the event, and before leaving your shift. Check items after completing them.</p></div><button class="btn small quiet" id="resetChecksBtn">Reset checklist</button></div>
+        <div class="sectionhead checklistHead"><div><h2>Technician checklist</h2><p>Use this during takeover, while supporting the event, and before leaving your shift. Check items after completing them.</p></div><button type="button" class="btn small quiet" id="resetChecksBtn">Reset checklist</button></div>
         <div class="checkSummary"><div><strong id="overallProgress">0 / 0</strong><span>checks complete</span></div><div class="progress"><span id="overallProgressBar"></span></div></div>
         <div class="checkgrid" id="checklistGrid"></div>
       </section>
