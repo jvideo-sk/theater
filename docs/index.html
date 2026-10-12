@@ -98,13 +98,14 @@
 
       <section class="card eventCard" aria-labelledby="eventDetailsTitle">
         <div class="sectionhead eventHead">
-          <div><h2 id="eventDetailsTitle">Current event</h2><p id="eventSummaryText">Add the event name, date, and phase once. That context is shared across handoffs and incident reports.</p></div>
+          <div><h2 id="eventDetailsTitle">Current event · Administrator managed</h2><p id="eventSummaryText">The active rental is assigned by an administrator and shared across every technician's handoff.</p></div>
           <div class="eventHeadActions">
             <span class="pill amber" id="saveStatus" role="status" aria-live="polite">Connecting…</span>
             <button type="button" class="btn small quiet eventToggle" id="toggleEventDetailsBtn" aria-expanded="true" aria-controls="eventDetailsBody">Hide details <span aria-hidden="true">⌃</span></button>
           </div>
         </div>
         <div id="eventDetailsBody" class="eventDetailsBody">
+        <div class="eventLockedNotice" id="eventAdminNotice" hidden><strong>Active event is admin-managed.</strong> Event name, date, phase, rooms, lead, and schedule are read-only for technicians. Ask an administrator to change the active rental.</div>
         <div class="fields eventFields">
           <div class="fieldgroup wide"><label class="label" for="eventName">Event / rental name</label><input class="field" id="eventName" placeholder="e.g. Dance recital / company meeting"></div>
           <div class="fieldgroup"><label class="label" for="eventDate">Event date</label><input class="field" id="eventDate" type="date"></div>
@@ -126,10 +127,11 @@
           <div class="card">
             <h3 class="cardTitle">Shift details</h3>
             <div class="fields twoCols">
-              <div class="fieldgroup"><label class="label" for="outgoingTech">Outgoing technician *</label><input class="field" id="outgoingTech" placeholder="Your name / initials"></div>
-              <div class="fieldgroup"><label class="label" for="incomingTech">Incoming technician</label><input class="field" id="incomingTech" placeholder="Next shift / person"></div>
-              <div class="fieldgroup"><label class="label" for="shiftEnd">Shift ended / handoff time</label><input class="field" id="shiftEnd" type="text" placeholder="e.g. 6:00 PM"></div>
-              <div class="fieldgroup"><label class="label" for="nextShiftStart">Next shift starts</label><input class="field" id="nextShiftStart" type="text" placeholder="e.g. 6:00 PM"></div>
+              <div class="fieldgroup"><label class="label" for="outgoingTech">Outgoing technician · Signed in account</label><input class="field" id="outgoingTech" placeholder="Signed-in technician" readonly aria-readonly="true"><span class="helpText">Recorded automatically from your account; this field cannot be changed.</span></div>
+              <div class="fieldgroup"><label class="label" for="incomingTech">Incoming technician</label><select class="field" id="incomingTech"><option value="">Unassigned / no incoming technician</option></select><span class="helpText scheduleHint mutedHint" id="incomingTechHint">An administrator can schedule coverage; matching assignments are suggested here.</span></div>
+              <div class="fieldgroup"><label class="label" for="shiftEnd">Shift ended / handoff time</label><input class="field" id="shiftEnd" type="time"></div>
+              <div class="fieldgroup"><label class="label" for="nextShiftDate">Next shift date</label><input class="field" id="nextShiftDate" type="date"></div>
+              <div class="fieldgroup"><label class="label" for="nextShiftStart">Next shift starts</label><input class="field" id="nextShiftStart" type="time"></div>
               <div class="fieldgroup"><label class="label" for="handoffPriority">Handoff priority</label><select class="field" id="handoffPriority"><option>Routine</option><option>Needs attention</option><option>Urgent</option></select></div>
             </div>
             <div class="fieldgroup formSpace"><label class="label" for="currentStatus">Current situation *</label><textarea id="currentStatus" placeholder="What is happening right now? Is the event on schedule? What state is the room / booth / equipment in?"></textarea></div>
@@ -209,6 +211,20 @@
           </form>
           <div class="userAdminListHeader"><h3>Existing accounts</h3><button class="btn small quiet" id="refreshUsersBtn" type="button">↻ Refresh</button></div>
           <div id="adminUsersList" class="adminUsersList"><div class="empty">Loading account list…</div></div>
+        </section>
+
+        <section class="card timeSheetAdminPanel" id="timeSheetAdminPanel" data-admin-only hidden aria-labelledby="timeSheetTitle">
+          <div class="sectionhead innerHead"><div><h2 id="timeSheetTitle">Technician schedule / timesheet</h2><p>Administrators decide who is assigned to the active event and when. Matching assignments automatically suggest the incoming technician in a handoff.</p></div><span class="pill green">Administrator</span></div>
+          <form id="timeSheetForm" class="fields timeSheetForm">
+            <div class="fieldgroup"><label class="label" for="scheduleDate">Shift date *</label><input class="field" id="scheduleDate" type="date" required></div>
+            <div class="fieldgroup"><label class="label" for="scheduleStart">Start time *</label><input class="field" id="scheduleStart" type="time" required></div>
+            <div class="fieldgroup"><label class="label" for="scheduleEnd">End time *</label><input class="field" id="scheduleEnd" type="time" required></div>
+            <div class="fieldgroup"><label class="label" for="scheduleTechnician">Assigned technician *</label><select class="field" id="scheduleTechnician" required><option value="">Choose a technician</option></select></div>
+            <div class="fieldgroup wide"><label class="label" for="scheduleNotes">Assignment / post notes</label><input class="field" id="scheduleNotes" maxlength="180" placeholder="e.g. Sound desk, lobby coverage, break relief"></div>
+            <div class="fieldgroup timeSheetSubmit"><button class="btn primary" type="submit">＋ Add scheduled shift</button><span class="helpText">Overlapping shifts for the same technician are rejected. Overnight coverage should be split across two dated shifts.</span></div>
+          </form>
+          <div class="timeSheetListHeader"><h3>Assigned coverage</h3><span class="pill" id="timeSheetCount">0 shifts</span></div>
+          <div class="timeSheetList" id="timeSheetList"><div class="empty"><strong>No shifts scheduled</strong>Administrators can assign technician coverage for the active event above.</div></div>
         </section>
 
         <div class="sectionhead"><div><h2>Technician checklist</h2><p>Change section names, instructions, individual tasks, or add new tasks.</p></div></div>

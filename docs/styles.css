@@ -667,3 +667,40 @@ body.authPending .skipLink { display: none; }
 
 /* Role-gated controls must remain hidden even when component display rules exist. */
 [data-admin-only][hidden], .view[data-admin-only][hidden] { display: none !important; }
+
+/* Admin-assigned active event and technician timesheet */
+.eventLockedNotice {
+  margin: 0 0 14px; padding: 11px 13px; border-radius: 10px;
+  border: 1px solid #3d5878; background: #172638; color: var(--muted);
+  font-size: 11px; line-height: 1.55;
+}
+.eventLockedNotice strong { display: block; color: #b9d9ff; margin-bottom: 2px; }
+.eventLockedNotice[hidden], .timeSheetAdminPanel[hidden] { display: none !important; }
+.eventFields .field:disabled { opacity: .78; cursor: not-allowed; color: #c6d0de; background: #111a24; }
+#outgoingTech { background: #111a24; color: #c6d0de; }
+.scheduleHint { display: block; margin-top: 5px; }
+.scheduleHint:not(.mutedHint) { color: #a7d7b4; }
+.mutedHint { color: var(--muted); }
+.timeSheetAdminPanel { margin: 18px 0 24px; }
+.timeSheetForm { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 14px; }
+.timeSheetForm .wide { grid-column: 1 / -1; }
+.timeSheetSubmit { grid-column: 1 / -1; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.timeSheetSubmit .helpText { max-width: 600px; }
+.timeSheetListHeader { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--line); }
+.timeSheetListHeader h3 { font-size: 13px; margin: 0; }
+.timeSheetList { display: grid; gap: 8px; margin-top: 10px; }
+.scheduledShiftRow { display: grid; grid-template-columns: minmax(165px, .8fr) minmax(180px, 1.3fr) auto; gap: 12px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: #111a24; }
+.scheduledShiftWhen strong, .scheduledShiftWho strong { display: block; font-size: 12px; color: var(--text); }
+.scheduledShiftWhen span, .scheduledShiftWho small { display: block; margin-top: 4px; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.scheduledShiftRow .btn { justify-self: end; }
+@media (max-width: 1050px) {
+  .timeSheetForm { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .scheduledShiftRow { grid-template-columns: minmax(130px, .8fr) minmax(140px, 1fr) auto; }
+}
+@media (max-width: 600px) {
+  .timeSheetForm { grid-template-columns: 1fr; }
+  .timeSheetForm .wide, .timeSheetSubmit { grid-column: auto; }
+  .scheduledShiftRow { grid-template-columns: 1fr auto; }
+  .scheduledShiftWhen, .scheduledShiftWho { grid-column: 1 / -1; }
+  .scheduledShiftRow .btn { grid-column: 2; grid-row: 1; }
+}

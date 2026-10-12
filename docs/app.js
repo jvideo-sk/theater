@@ -80,6 +80,7 @@
   let hostConnectionProblem = false;
   let activeSessionToken = "";
   let activeUser = null;
+  let technicianDirectory = [];
   let reloadAfterLogin = false;
   let state = createBlankState();
 
@@ -97,6 +98,7 @@
     outgoingTech: "outgoing",
     incomingTech: "incoming",
     shiftEnd: "shiftEnd",
+    nextShiftDate: "nextDate",
     nextShiftStart: "nextStart",
     handoffPriority: "priority",
     currentStatus: "summary",
@@ -191,6 +193,7 @@
         outgoing: "",
         incoming: "",
         shiftEnd: "",
+        nextDate: "",
         nextStart: "",
         priority: "Routine",
         summary: "",
@@ -204,6 +207,7 @@
       checks: {},
       handoffs: [],
       incidents: [],
+      shiftSchedule: [],
       created: Date.now(),
       updated: null,
     };
@@ -221,6 +225,7 @@
       checks: saved.checks && typeof saved.checks === "object" ? saved.checks : {},
       handoffs: Array.isArray(saved.handoffs) ? saved.handoffs : [],
       incidents: Array.isArray(saved.incidents) ? saved.incidents : [],
+      shiftSchedule: Array.isArray(saved.shiftSchedule) ? saved.shiftSchedule : [],
     };
   }
 
@@ -342,6 +347,18 @@
     updateSessionIdentity();
   }
 
+  function updateEventEditPermissions() {
+    const canEdit = isAdmin();
+    Object.keys(eventFieldMap).forEach((elementId) => {
+      const field = $(elementId);
+      if (field) field.disabled = !canEdit;
+    });
+    const notice = $("eventAdminNotice");
+    if (notice) notice.hidden = canEdit;
+    const title = $("eventDetailsTitle");
+    if (title) title.textContent = canEdit ? "Current event · Administrator managed" : "Current event · Set by administrator";
+  }
+
   function updateSessionIdentity() {
     const nameNode = $("sessionUserName");
     const roleNode = $("sessionUserRole");
@@ -364,6 +381,9 @@
 
     const settingsView = $("view-settings");
     if (settingsView) settingsView.hidden = !isAdministrator;
+    const timeSheetPanel = $("timeSheetAdminPanel");
+    if (timeSheetPanel) timeSheetPanel.hidden = !isAdministrator;
+    updateEventEditPermissions();
     if (!isAdministrator && settingsView?.classList.contains("active")) {
       switchView("handoff");
     }
@@ -766,6 +786,171 @@
   }
 
   // ===========================================================================
+  // TECHNICIAN DIRECTORY AND ADMIN-MANAGED SHIFT SCHEDULE
+  // ===========================================================================
+  function setTechnicianDirectory(users) {
+    technicianDirectory = (Array.isArray(users) ? users : [])
+      .filter((user) => user && !user.disabled && user.username && user.displayName)
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+    renderIncomingTechnicianOptions(state.shiftDraft?.incoming || "");
+    renderShiftScheduleTechnicianOptions();
+    renderTimeSheet();
+  }
+
+  function normalizeTechnicianSelection(value) {
+    const requested = String(value || "").trim();
+    if (!requested) return "";
+    const byUsername = technicianDirectory.find((user) => user.username.toLowerCase() === requested.toLowerCase());
+    if (byUsername) return byUsername.username;
+    const byName = technicianDirectory.find((user) => user.displayName.toLowerCase() === requested.toLowerCase());
+    return byName ? byName.username : "";
+  }
+
+  function renderIncomingTechnicianOptions(selectedValue = "", allowedUsernames = null) {
+    const select = $("incomingTech");
+    if (!select) return;
+    const allowed = Array.isArray(allowedUsernames) ? new Set(allowedUsernames) : null;
+    const listedUsers = technicianDirectory.filter((user) => !allowed || allowed.has(user.username));
+    const selected = normalizeTechnicianSelection(selectedValue);
+    const canLeaveUnassigned = !Array.isArray(allowedUsernames);
+    select.innerHTML = [
+      ...(canLeaveUnassigned ? ['<option value="">Unassigned / no incoming technician</option>'] : []),
+      ...listedUsers.map((user) => `<option value="${escapeHtml(user.username)}">${escapeHtml(user.displayName)} (@${escapeHtml(user.username)})${user.role === "admin" ? " · Admin" : ""}</option>`),
+    ].join("");
+    select.value = selected && listedUsers.some((user) => user.username === selected) ? selected : "";
+  }
+
+  function renderShiftScheduleTechnicianOptions() {
+    const select = $("scheduleTechnician");
+    if (!select) return;
+    const selected = select.value;
+    select.innerHTML = [
+      '<option value="">Choose a technician</option>',
+      ...technicianDirectory.map((user) => `<option value="${escapeHtml(user.username)}">${escapeHtml(user.displayName)} (@${escapeHtml(user.username)})${user.role === "admin" ? " · Admin" : ""}</option>`),
+    ].join("");
+    select.value = technicianDirectory.some((user) => user.username === selected) ? selected : "";
+  }
+
+  async function refreshTechnicianDirectory() {
+    const response = await hostRequest("/api/technicians", { method: "GET" });
+    const payload = await readApiPayload(response);
+    setTechnicianDirectory(Array.isArray(payload.technicians) ? payload.technicians : []);
+  }
+
+  function getScheduledShiftsForNextStart() {
+    const date = String(state.shiftDraft.nextDate || state.event.date || "");
+    const startTime = String(state.shiftDraft.nextStart || "");
+    if (!date || !startTime) return [];
+    return state.shiftSchedule
+      .filter((shift) => shift.date === date && shift.startTime === startTime && technicianDirectory.some((user) => user.username === shift.technicianUsername))
+      .sort((a, b) => String(a.technicianDisplayName || "").localeCompare(String(b.technicianDisplayName || "")));
+  }
+
+  function getScheduledShiftForNextStart() {
+    return getScheduledShiftsForNextStart()[0] || null;
+  }
+
+  function updateIncomingScheduleHint(applySuggestion = false) {
+    const hint = $("incomingTechHint");
+    const select = $("incomingTech");
+    if (!hint || !select) return;
+    const scheduled = getScheduledShiftsForNextStart();
+    if (scheduled.length) {
+      const allowedNames = scheduled.map((shift) => shift.technicianDisplayName || shift.technicianUsername || "Scheduled technician");
+      const allowedUsernames = scheduled.map((shift) => shift.technicianUsername).filter(Boolean);
+      const currentUsername = normalizeTechnicianSelection(state.shiftDraft.incoming);
+      const chosen = allowedUsernames.includes(currentUsername) ? currentUsername : allowedUsernames[0];
+      if (chosen && state.shiftDraft.incoming !== chosen) {
+        state.shiftDraft.incoming = chosen;
+        if (applySuggestion) saveState();
+      }
+      renderIncomingTechnicianOptions(chosen || state.shiftDraft.incoming, allowedUsernames);
+      select.value = allowedUsernames.includes(chosen) ? chosen : "";
+      // One scheduled assignee is authoritative. If the admin assigned multiple
+      // people for that exact shift start, allow selection only among those names.
+      select.disabled = scheduled.length === 1;
+      hint.textContent = scheduled.length === 1
+        ? `Assigned by administrator: ${allowedNames[0]} (${scheduled[0].startTime}–${scheduled[0].endTime}). The timesheet controls this handoff target.`
+        : `Administrator scheduled ${allowedNames.join(", ")}. Choose the incoming technician from these assigned accounts.`;
+      hint.className = "helpText scheduleHint";
+    } else {
+      renderIncomingTechnicianOptions(state.shiftDraft.incoming);
+      select.disabled = false;
+      hint.textContent = "No scheduled technician matches this date/time. Choose an active incoming account, or ask an administrator to schedule the shift.";
+      hint.className = "helpText scheduleHint mutedHint";
+    }
+  }
+
+  function renderTimeSheet() {
+    const list = $("timeSheetList");
+    if (!list) return;
+    renderShiftScheduleTechnicianOptions();
+    const shifts = [...(state.shiftSchedule || [])].sort((a, b) => `${a.date}T${a.startTime}`.localeCompare(`${b.date}T${b.startTime}`));
+    const count = $("timeSheetCount");
+    if (count) count.textContent = `${shifts.length} ${shifts.length === 1 ? "shift" : "shifts"}`;
+    if (!shifts.length) {
+      list.innerHTML = '<div class="empty"><strong>No shifts scheduled</strong>Administrators can assign technician coverage for the active event above.</div>';
+      updateIncomingScheduleHint(false);
+      return;
+    }
+    list.innerHTML = shifts.map((shift) => {
+      const activeAssignedUser = technicianDirectory.some((user) => user.username === shift.technicianUsername);
+      const technician = `${shift.technicianDisplayName || shift.technicianUsername || "Unassigned"}${activeAssignedUser ? "" : " · inactive account"}`;
+      const dateLabel = shift.date ? new Date(`${shift.date}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" }) : "Date not set";
+      return `<article class="scheduledShiftRow" data-shift-row="${escapeHtml(shift.id)}">
+        <div class="scheduledShiftWhen"><strong>${escapeHtml(dateLabel)}</strong><span>${escapeHtml(shift.startTime || "??:??")}–${escapeHtml(shift.endTime || "??:??")}</span></div>
+        <div class="scheduledShiftWho"><strong>${escapeHtml(technician)}</strong><small>@${escapeHtml(shift.technicianUsername || "unassigned")}${shift.notes ? ` · ${escapeHtml(shift.notes)}` : ""}</small></div>
+        <button type="button" class="btn small danger" data-delete-scheduled-shift="${escapeHtml(shift.id)}">Remove</button>
+      </article>`;
+    }).join("");
+    updateIncomingScheduleHint(false);
+  }
+
+  async function addScheduledShift(event) {
+    event.preventDefault();
+    if (!isAdmin()) return showToast("Only administrators can manage the shift schedule.");
+    const date = $("scheduleDate").value;
+    const startTime = $("scheduleStart").value;
+    const endTime = $("scheduleEnd").value;
+    const username = $("scheduleTechnician").value;
+    const notes = $("scheduleNotes").value.trim();
+    const person = technicianDirectory.find((user) => user.username === username && !user.disabled);
+    if (!date || !startTime || !endTime || !person) return showToast("Choose a date, start/end time, and active technician.");
+    if (endTime <= startTime) return showToast("End time must be later than start time. Split overnight shifts across two entries.");
+    const overlaps = state.shiftSchedule.some((shift) => shift.date === date && shift.technicianUsername === username && startTime < shift.endTime && shift.startTime < endTime);
+    if (overlaps) return showToast("That technician already has an overlapping shift on this date.");
+    state.shiftSchedule.push({
+      id: createId(), date, startTime, endTime,
+      technicianUserId: person.id, technicianUsername: person.username, technicianDisplayName: person.displayName,
+      notes, createdAt: Date.now(), createdBy: { id: activeUser.id, username: activeUser.username, displayName: activeUser.displayName },
+    });
+    renderTimeSheet();
+    const saved = await saveState({ immediate: true });
+    if (!saved) return;
+    event.target.reset();
+    $("scheduleDate").value = state.event.date || localDateString();
+    renderShiftScheduleTechnicianOptions();
+    showToast(`Scheduled ${person.displayName} for ${date} ${startTime}–${endTime}.`);
+    if (state.shiftDraft.nextDate === date && state.shiftDraft.nextStart === startTime) {
+      state.shiftDraft.incoming = person.username;
+      renderIncomingTechnicianOptions(person.username);
+      $("incomingTech").value = person.username;
+      updateIncomingScheduleHint(false);
+      await saveState({ immediate: true });
+    }
+  }
+
+  async function removeScheduledShift(id) {
+    if (!isAdmin()) return showToast("Only administrators can manage the shift schedule.");
+    const shift = state.shiftSchedule.find((entry) => entry.id === id);
+    if (!shift) return;
+    if (!window.confirm(`Remove ${shift.technicianDisplayName || shift.technicianUsername}'s scheduled shift on ${shift.date} (${shift.startTime}–${shift.endTime})?`)) return;
+    state.shiftSchedule = state.shiftSchedule.filter((entry) => entry.id !== id);
+    renderTimeSheet();
+    if (await saveState({ immediate: true })) showToast("Scheduled shift removed.");
+  }
+
+  // ===========================================================================
   // DYNAMIC OPTIONS — edited from the Customize page
   // ===========================================================================
   function setSelectOptions(select, values, selectedValue, includeAll = false) {
@@ -780,9 +965,13 @@
 
   function renderDynamicOptions() {
     const settings = state.settings || (state.settings = cloneDefaultSettings());
-    const phase = settings.eventPhases.includes(state.event.status) ? state.event.status : settings.eventPhases[0];
-    state.event.status = phase;
-    setSelectOptions($("eventStatus"), settings.eventPhases, phase);
+    const currentPhase = String(state.event.status || "");
+    const phase = settings.eventPhases.includes(currentPhase)
+      ? currentPhase
+      : (isAdmin() ? settings.eventPhases[0] : (currentPhase || settings.eventPhases[0]));
+    if (isAdmin()) state.event.status = phase;
+    const phaseOptions = settings.eventPhases.includes(phase) ? settings.eventPhases : [phase, ...settings.eventPhases];
+    setSelectOptions($("eventStatus"), phaseOptions, phase);
 
     if (!settings.handoffPriorities.includes(state.shiftDraft.priority)) {
       state.shiftDraft.priority = settings.handoffPriorities[0];
@@ -813,7 +1002,9 @@
     const date = String($("eventDate")?.value || state.event.date || "").trim();
     const phase = String($("eventStatus")?.value || state.event.status || "").trim();
     if (!name) {
-      summary.textContent = "Add the event name, date, and phase once. That context is shared across handoffs and incident reports.";
+      summary.textContent = isAdmin()
+        ? "Set the active rental here. Its event name, date, and phase are shared across handoffs and incident reports."
+        : "No active event has been set by an administrator yet. Contact an administrator before logging shift details.";
       return;
     }
     const dateLabel = date
@@ -828,13 +1019,43 @@
       $(elementId).value = state.event[stateKey] ?? "";
     });
     updateEventSummary();
+    updateEventEditPermissions();
+  }
+
+  function normalizeTimeInput(value) {
+    const raw = String(value || "").trim();
+    if (/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(raw)) return raw;
+    const match = /^(\d{1,2})(?::([0-5]\d))?\s*(AM|PM)$/i.exec(raw);
+    if (!match) return "";
+    let hour = Number(match[1]) % 12;
+    if (match[3].toUpperCase() === "PM") hour += 12;
+    return `${String(hour).padStart(2, "0")}:${match[2] || "00"}`;
   }
 
   function fillHandoffDraft() {
     renderDynamicOptions();
+    if (!state.shiftDraft.nextDate) state.shiftDraft.nextDate = state.event.date || localDateString();
+    state.shiftDraft.shiftEnd = normalizeTimeInput(state.shiftDraft.shiftEnd);
+    state.shiftDraft.nextStart = normalizeTimeInput(state.shiftDraft.nextStart);
+    state.shiftDraft.outgoing = activeUser?.displayName || "";
+    state.shiftDraft.incoming = normalizeTechnicianSelection(state.shiftDraft.incoming);
     Object.entries(handoffFieldMap).forEach(([elementId, stateKey]) => {
-      $(elementId).value = state.shiftDraft[stateKey] ?? "";
+      const field = $(elementId);
+      if (!field) return;
+      if (elementId === "outgoingTech") {
+        field.value = activeUser?.displayName || "";
+        field.readOnly = true;
+        return;
+      }
+      if (elementId === "incomingTech") {
+        renderIncomingTechnicianOptions(state.shiftDraft.incoming);
+        field.value = state.shiftDraft.incoming;
+        return;
+      }
+      field.value = state.shiftDraft[stateKey] ?? "";
     });
+    updateIncomingScheduleHint(true);
+    if ($("scheduleDate") && !$("scheduleDate").value) $("scheduleDate").value = state.event.date || localDateString();
   }
 
   function bindAutoSaveFields(fieldMap, targetObjectName) {
@@ -859,9 +1080,15 @@
   // ===========================================================================
   async function saveHandoff() {
     const draft = state.shiftDraft;
-    if (!draft.outgoing.trim() || !draft.summary.trim() || !draft.nextActions.trim()) {
-      showToast("Add the outgoing technician, current situation, and next shift priorities first.");
-      const requiredField = !draft.outgoing.trim() ? "outgoingTech" : !draft.summary.trim() ? "currentStatus" : "nextActions";
+    const outgoingName = activeUser?.displayName || "";
+    const incomingUser = technicianDirectory.find((user) => user.username === draft.incoming && !user.disabled);
+    if (!String(state.event.name || "").trim()) {
+      showToast("No active event has been assigned. Ask an administrator to set the current event before saving a handoff.");
+      return;
+    }
+    if (!activeUser || !outgoingName || !draft.summary.trim() || !draft.nextActions.trim()) {
+      showToast("Add the current situation and next shift priorities first. Your signed-in account is recorded automatically.");
+      const requiredField = !draft.summary.trim() ? "currentStatus" : "nextActions";
       $(requiredField).focus();
       return;
     }
@@ -871,7 +1098,14 @@
       savedAt: Date.now(),
       event: { ...state.event },
       ...draft,
-      createdBy: activeUser ? { username: activeUser.username, displayName: activeUser.displayName } : null,
+      outgoing: outgoingName,
+      outgoingUsername: activeUser.username,
+      outgoingUserId: activeUser.id,
+      incoming: incomingUser?.displayName || "",
+      incomingUsername: incomingUser?.username || "",
+      incomingUserId: incomingUser?.id || "",
+      nextDate: draft.nextDate || state.event.date || localDateString(),
+      createdBy: { username: activeUser.username, displayName: activeUser.displayName, id: activeUser.id },
       eventId: state.eventId,
       reviewed: false,
       reviewedBy: "",
@@ -889,7 +1123,9 @@
   function renderHandoffCard(entry) {
     const priority = entry.priority || "Routine";
     const status = entry.event?.status || "Phase not recorded";
-    const recipient = entry.incoming?.trim() || "Incoming technician not named";
+    const recipient = entry.incoming?.trim()
+      ? `${entry.incoming}${entry.incomingUsername ? ` (@${entry.incomingUsername})` : ""}`
+      : "No incoming technician assigned";
     const acknowledgement = entry.reviewed
       ? `<span class="ackStatus">✓ Read by ${escapeHtml(entry.reviewedBy || "incoming technician")}${entry.reviewedByUsername ? ` (@${escapeHtml(entry.reviewedByUsername)})` : ""} · ${escapeHtml(formatDateTime(entry.reviewedAt))}</span>`
       : `<span class="pill amber">Not acknowledged</span>`;
@@ -910,7 +1146,7 @@
             <div class="historyWho">${escapeHtml(entry.outgoing || "Technician not named")} → ${escapeHtml(recipient)}</div>
             <div class="historyMeta">Saved ${escapeHtml(formatDateTime(entry.savedAt))} · ${escapeHtml(entry.event?.name || "Untitled event")} · ${escapeHtml(entry.event?.spaces || "Spaces not listed")}</div>
             ${entry.createdBy?.displayName ? `<div class="historyMeta">Recorded by ${escapeHtml(entry.createdBy.displayName)} (@${escapeHtml(entry.createdBy.username || "unknown")})</div>` : ""}
-            <div class="historyMeta">Shift time: ${escapeHtml(entry.shiftEnd || "Not given")} · Next shift: ${escapeHtml(entry.nextStart || "Not given")} · Event phase: ${escapeHtml(status)}</div>
+            <div class="historyMeta">Shift ended: ${escapeHtml(entry.shiftEnd || "Not given")} · Next shift: ${escapeHtml([entry.nextDate, entry.nextStart].filter(Boolean).join(" ") || "Not scheduled")} · Event phase: ${escapeHtml(status)}</div>
           </div>
           <span class="pill ${priorityClass(priority)}">${escapeHtml(priority)}</span>
         </div>
@@ -941,6 +1177,9 @@
     Object.keys(state.shiftDraft).forEach((key) => {
       if (typeof entry[key] !== "undefined") state.shiftDraft[key] = entry[key];
     });
+    state.shiftDraft.outgoing = activeUser?.displayName || "";
+    state.shiftDraft.incoming = entry.incomingUsername || "";
+    state.shiftDraft.nextDate = entry.nextDate || state.event.date || localDateString();
     fillHandoffDraft();
     const saved = await saveState({ immediate: true });
     if (!saved) return;
@@ -1144,6 +1383,12 @@
       showToast("Only administrators can customize the workspace.");
       return;
     }
+    const deleteScheduledShiftButton = event.target.closest("[data-delete-scheduled-shift]");
+    if (deleteScheduledShiftButton) {
+      await removeScheduledShift(deleteScheduledShiftButton.dataset.deleteScheduledShift);
+      return;
+    }
+
     const deleteSectionButton = event.target.closest("[data-delete-section]");
     if (deleteSectionButton) {
       const sectionId = deleteSectionButton.dataset.deleteSection;
@@ -1196,6 +1441,12 @@
       return;
     }
 
+    if (form.id === "timeSheetForm") {
+      event.preventDefault();
+      await addScheduledShift(event);
+      return;
+    }
+
     if (form.id === "addSectionForm") {
       event.preventDefault();
       const title = $("newSectionTitle").value.trim();
@@ -1244,6 +1495,10 @@
   // ===========================================================================
   async function addIncident(event) {
     event.preventDefault();
+    if (!String(state.event?.name || "").trim()) {
+      showToast("No active event has been assigned. Ask an administrator to set the current event before logging an incident.");
+      return;
+    }
     const title = $("incidentTitle").value.trim();
     const details = $("incidentDetail").value.trim();
     if (!title || !details) return;
@@ -1526,6 +1781,7 @@
   function renderApp() {
     renderDynamicOptions();
     renderSettings();
+    renderTimeSheet();
     renderChecklist();
     renderHandoffs();
     renderIncidents();
@@ -1612,6 +1868,7 @@
   function renderAdminUsers(users) {
     const list = $("adminUsersList");
     if (!list) return;
+    setTechnicianDirectory(users.filter((user) => !user.disabled));
     if (!users.length) {
       list.innerHTML = '<div class="empty"><strong>No accounts yet</strong>Create the first technician account using the form above.</div>';
       return;
@@ -1710,11 +1967,36 @@
     bindAutoSaveFields(eventFieldMap, "event");
     bindAutoSaveFields(handoffFieldMap, "shiftDraft");
 
+    // Timesheet form submission and shift deletion are handled by the Settings
+    // view's delegated submit/click handlers to avoid duplicate actions.
+    $("incomingTech")?.addEventListener("change", () => {
+      state.shiftDraft.incoming = normalizeTechnicianSelection($("incomingTech").value);
+      updateIncomingScheduleHint(false);
+      saveState();
+    });
+    ["nextShiftDate", "nextShiftStart"].forEach((id) => $(id)?.addEventListener("change", () => {
+      const scheduled = getScheduledShiftForNextStart();
+      if (scheduled) {
+        state.shiftDraft.incoming = scheduled.technicianUsername;
+        renderIncomingTechnicianOptions(state.shiftDraft.incoming);
+        $("incomingTech").value = state.shiftDraft.incoming;
+        updateIncomingScheduleHint(false);
+        saveState();
+      } else {
+        updateIncomingScheduleHint(false);
+      }
+    }));
+
     $("saveHandoffBtn").addEventListener("click", saveHandoff);
 
     $("checklistGrid").addEventListener("change", async (event) => {
       const checkbox = event.target.closest("[data-check]");
       if (!checkbox) return;
+      if (!String(state.event?.name || "").trim()) {
+        checkbox.checked = Boolean(state.checks[checkbox.dataset.check]);
+        showToast("An administrator must assign the active event before technicians can update its checklist.");
+        return;
+      }
       state.checks[checkbox.dataset.check] = checkbox.checked;
       renderChecklist();
       if (await saveState({ immediate: true })) showToast(checkbox.checked ? "Checklist item saved." : "Checklist item unchecked and saved.");
@@ -1823,6 +2105,14 @@
         loginHint = `Cannot load shared data from ${FIXED_API_BASE_URL}. Check the API server and Cloudflare Tunnel. ${error.message || ""}`.trim();
         showLoginPage(loginHint);
       }
+    }
+
+    try {
+      await refreshTechnicianDirectory();
+    } catch (error) {
+      console.error("Could not load active technician directory.", error);
+      technicianDirectory = [];
+      showToast("The technician list could not be loaded. Incoming assignments and the schedule may be unavailable until refresh.");
     }
 
     fillEventFields();
