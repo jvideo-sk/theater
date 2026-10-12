@@ -664,3 +664,6 @@ body.authPending .skipLink { display: none; }
   .skipLink, .actionMenu, .eventToggle { display: none !important; }
   .eventDetailsBody[hidden] { display: block !important; }
 }
+
+/* Role-gated controls must remain hidden even when component display rules exist. */
+[data-admin-only][hidden], .view[data-admin-only][hidden] { display: none !important; }

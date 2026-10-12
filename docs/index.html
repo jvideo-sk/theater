@@ -48,13 +48,13 @@
           <button type="button" class="active" data-view="handoff"><span class="navIcon" aria-hidden="true">⇄</span><span class="navText">Shift handoff</span><span class="navCount" id="handoffNavCount">0</span></button>
           <button type="button" data-view="checklist"><span class="navIcon" aria-hidden="true">☑</span><span class="navText">Tech checklist</span><span class="navCount" id="checkNavCount">0%</span></button>
           <button type="button" data-view="incidents"><span class="navIcon" aria-hidden="true">⚠</span><span class="navText">Incident log</span><span class="pill amber" id="openIncidentNav">0 open</span></button>
-          <button type="button" data-view="settings"><span class="navIcon" aria-hidden="true">⚙</span><span class="navText">Settings</span></button>
+          <button type="button" data-view="settings" data-admin-only hidden><span class="navIcon" aria-hidden="true">⚙</span><span class="navText">Settings &amp; admin</span></button>
         </nav>
       </div>
 
       <div class="sideNote">
         <span class="dot"></span><strong>Shared venue record</strong>
-        <p>Handoffs, checklist progress, and incidents are shared with the team through the theatre host. If connection fails, report it rather than keeping a separate local copy.</p>
+        <p>Technicians handle handoffs, checklist progress, and incidents. Administrators manage configuration, accounts, new events, and record cleanup.</p>
       </div>
     </aside>
 
@@ -66,13 +66,13 @@
           <p class="sub" id="pageSub">Leave the next technician a clear picture of the event, outstanding work, and anything that needs attention.</p>
         </div>
         <div class="actions">
-          <button type="button" class="btn primary newEventAction" id="newEventBtn"><span aria-hidden="true">＋</span> New event</button>
+          <button type="button" class="btn primary newEventAction" id="newEventBtn" data-admin-only hidden><span aria-hidden="true">＋</span> New event</button>
           <details class="actionMenu" id="actionMenu">
             <summary class="btn actionMenuTrigger"><span aria-hidden="true">⋯</span> More actions <span class="menuChevron" aria-hidden="true">⌄</span></summary>
             <div class="actionMenuPanel" role="group" aria-label="More event actions">
               <button type="button" class="actionMenuItem" id="printBtn"><span aria-hidden="true">⎙</span><span><strong>Print current view</strong><small>Open the browser print dialog</small></span></button>
               <button type="button" class="actionMenuItem" id="exportBtn"><span aria-hidden="true">↓</span><span><strong>Export backup</strong><small>Download a JSON copy of the record</small></span></button>
-              <button type="button" class="actionMenuItem" id="importBtn"><span aria-hidden="true">↑</span><span><strong>Import backup</strong><small>Restore a previously exported JSON file</small></span></button>
+              <button type="button" class="actionMenuItem" id="importBtn" data-admin-only hidden><span aria-hidden="true">↑</span><span><strong>Import backup</strong><small>Restore a previously exported JSON file</small></span></button>
             </div>
           </details>
           <input accept="application/json,.json" class="hidden" id="importFile" type="file">
@@ -151,7 +151,7 @@
       </section>
 
       <section class="view" id="view-checklist">
-        <div class="sectionhead checklistHead"><div><h2>Technician checklist</h2><p>Use this during takeover, while supporting the event, and before leaving your shift. Check items after completing them.</p></div><button type="button" class="btn small quiet" id="resetChecksBtn">Reset checklist</button></div>
+        <div class="sectionhead checklistHead"><div><h2>Technician checklist</h2><p>Use this during takeover, while supporting the event, and before leaving your shift. Check items after completing them.</p></div><button type="button" class="btn small quiet" id="resetChecksBtn" data-admin-only hidden>Reset checklist</button></div>
         <div class="checkSummary"><div><strong id="overallProgress">0 / 0</strong><span>checks complete</span></div><div class="progress"><span id="overallProgressBar"></span></div></div>
         <div class="checkgrid" id="checklistGrid"></div>
       </section>
@@ -187,7 +187,7 @@
         </div>
       </section>
 
-      <section class="view" id="view-settings">
+      <section class="view" id="view-settings" data-admin-only hidden>
         <div class="sectionhead"><div><h2>Customize this desk</h2><p>Edit the checklist, event phases, incident categories, and priority choices here. Changes are shared when this browser is connected to the host.</p></div><span class="pill green">Editable in the browser</span></div>
         <div class="notice settingsNotice"><span class="nicon" aria-hidden="true">✎</span><div><strong>Changes are saved automatically</strong>When connected to the shared host, edits are shared with other technicians. Checklist checkmarks are kept when you rename an item. Deleting a section or task removes it from the checklist.</div></div>
 

@@ -123,6 +123,10 @@
     return `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
   }
 
+  function isAdmin() {
+    return activeUser?.role === "admin";
+  }
+
   function cloneDefaultSettings() {
     return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
   }
@@ -349,7 +353,20 @@
       const initials = String(activeUser?.displayName || "BT").split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
       avatarNode.textContent = initials || "BT";
     }
-    if (adminPanel) adminPanel.hidden = activeUser?.role !== "admin";
+    const isAdministrator = isAdmin();
+    if (adminPanel) adminPanel.hidden = !isAdministrator;
+
+    // Every element marked admin-only remains hidden until an authenticated
+    // administrator session is confirmed by the host API.
+    document.querySelectorAll("[data-admin-only]").forEach((element) => {
+      element.hidden = !isAdministrator;
+    });
+
+    const settingsView = $("view-settings");
+    if (settingsView) settingsView.hidden = !isAdministrator;
+    if (!isAdministrator && settingsView?.classList.contains("active")) {
+      switchView("handoff");
+    }
   }
 
   async function validateSessionToken(token) {
@@ -903,7 +920,7 @@
           <span style="flex:1"></span>
           <button type="button" class="btn small" data-load-handoff="${escapeHtml(entry.id)}">Load into draft</button>
           <button type="button" class="btn small" data-ack-handoff="${escapeHtml(entry.id)}">${entry.reviewed ? "Undo acknowledgement" : "Acknowledge read"}</button>
-          <button type="button" class="btn small danger" data-delete-handoff="${escapeHtml(entry.id)}">Delete</button>
+          ${isAdmin() ? `<button type="button" class="btn small danger" data-delete-handoff="${escapeHtml(entry.id)}">Delete</button>` : ""}
         </div>
       </article>
     `;
@@ -1046,11 +1063,16 @@
   }
 
   function renderSettings() {
+    if (!isAdmin()) return;
     renderChecklistSettings();
     renderApiConnectionPanel();
   }
 
   async function handleSettingsFieldChange(event) {
+    if (!isAdmin()) {
+      showToast("Only administrators can customize the workspace.");
+      return;
+    }
     const field = event.target;
 
     if (field.dataset.sectionField) {
@@ -1118,6 +1140,10 @@
   }
 
   async function handleSettingsClick(event) {
+    if (!isAdmin()) {
+      showToast("Only administrators can customize the workspace.");
+      return;
+    }
     const deleteSectionButton = event.target.closest("[data-delete-section]");
     if (deleteSectionButton) {
       const sectionId = deleteSectionButton.dataset.deleteSection;
@@ -1164,6 +1190,11 @@
 
   async function handleSettingsSubmit(event) {
     const form = event.target;
+    if (!isAdmin()) {
+      event.preventDefault();
+      showToast("Only administrators can customize the workspace.");
+      return;
+    }
 
     if (form.id === "addSectionForm") {
       event.preventDefault();
@@ -1279,7 +1310,7 @@
           <span><span class="pill ${statusClass}">${statusText}</span> ${resolvedText}</span>
           <div class="incidentActions">
             <button type="button" class="btn small" data-resolve-incident="${escapeHtml(incident.id)}">${incident.resolved ? "Reopen" : "Mark resolved"}</button>
-            <button type="button" class="btn small danger" data-delete-incident="${escapeHtml(incident.id)}">Delete</button>
+            ${isAdmin() ? `<button type="button" class="btn small danger" data-delete-incident="${escapeHtml(incident.id)}">Delete</button>` : ""}
           </div>
         </div>
       </article>
@@ -1356,6 +1387,10 @@
   }
 
   function switchView(viewName) {
+    if (viewName === "settings" && !isAdmin()) {
+      if (activeUser) showToast("Administrator access is required for workspace settings.");
+      viewName = "handoff";
+    }
     document.querySelectorAll(".view").forEach((view) => view.classList.toggle("active", view.id === `view-${viewName}`));
     document.querySelectorAll("[data-view]").forEach((button) => {
       const active = button.dataset.view === viewName;
@@ -1380,6 +1415,10 @@
   }
 
   async function startNewEvent() {
+    if (!isAdmin()) {
+      showToast("Only administrators can start a new event.");
+      return;
+    }
     const message = serverStorageEnabled
       ? "Start a new shared event? A JSON backup will download, and the host will archive the previous event. This replaces the current record for everyone using this host."
       : "Start a new event? A JSON backup of the current event will download first. The current event details, checklist checks, handoffs, and incidents will then be cleared from this browser.";
@@ -1418,6 +1457,10 @@
   }
 
   function importBackup(file) {
+    if (!isAdmin()) {
+      showToast("Only administrators can import a backup.");
+      return;
+    }
     const reader = new FileReader();
     reader.onload = async () => {
       try {
@@ -1456,6 +1499,7 @@
 
     const deleteHandoffButton = event.target.closest("[data-delete-handoff]");
     if (deleteHandoffButton) {
+      if (!isAdmin()) return showToast("Only administrators can delete handoff history.");
       if (!window.confirm(serverStorageEnabled
         ? "Delete this handoff entry from the shared host record? This affects everyone using the host and cannot be undone without a backup."
         : "Delete this handoff entry from the current browser record? This cannot be undone unless you have a backup.")) return;
@@ -1469,6 +1513,7 @@
 
     const deleteIncidentButton = event.target.closest("[data-delete-incident]");
     if (deleteIncidentButton) {
+      if (!isAdmin()) return showToast("Only administrators can delete incident records.");
       if (!window.confirm(serverStorageEnabled
         ? "Delete this incident from the shared host record? This affects everyone using the host and cannot be undone without a backup."
         : "Delete this incident report from the current browser record? This cannot be undone unless you have a backup.")) return;
@@ -1676,6 +1721,7 @@
     });
 
     $("resetChecksBtn").addEventListener("click", async () => {
+      if (!isAdmin()) return showToast("Only administrators can reset all checklist progress at once.");
       if (!window.confirm("Reset all technician checklist checks for this event? Handoff and incident history will remain.")) return;
       state.checks = {};
       renderChecklist();
