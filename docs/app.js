@@ -295,8 +295,6 @@
   function showLoginPage(message) {
     const screen = $("loginScreen");
     if (!screen) return;
-    const hostLabel = $("loginHostName");
-    if (hostLabel) hostLabel.textContent = window.BACKSTAGE_STATIC_SITE ? FIXED_API_BASE_URL : (getApiBaseUrl() || window.location.origin);
     setLoginMessage(message);
     screen.hidden = false;
     document.body.classList.add("loginOpen");
@@ -318,7 +316,7 @@
   function requestAccountLogin(message) {
     if (loginPromise) return loginPromise;
     loginPromise = new Promise((resolve) => { loginResolver = resolve; });
-    showLoginPage(message || "Sign in with your individual technician account.");
+    showLoginPage(message || "");
     return loginPromise;
   }
 
@@ -791,11 +789,28 @@
   // ===========================================================================
   // SHARED EVENT DETAILS AND DRAFT AUTOSAVE
   // ===========================================================================
+  function updateEventSummary() {
+    const summary = $("eventSummaryText");
+    if (!summary) return;
+    const name = String($("eventName")?.value || state.event.name || "").trim();
+    const date = String($("eventDate")?.value || state.event.date || "").trim();
+    const phase = String($("eventStatus")?.value || state.event.status || "").trim();
+    if (!name) {
+      summary.textContent = "Add the event name, date, and phase once. That context is shared across handoffs and incident reports.";
+      return;
+    }
+    const dateLabel = date
+      ? new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+      : "Date not set";
+    summary.textContent = [name, dateLabel, phase].filter(Boolean).join(" · ");
+  }
+
   function fillEventFields() {
     renderDynamicOptions();
     Object.entries(eventFieldMap).forEach(([elementId, stateKey]) => {
       $(elementId).value = state.event[stateKey] ?? "";
     });
+    updateEventSummary();
   }
 
   function fillHandoffDraft() {
@@ -812,6 +827,7 @@
       field.addEventListener(eventName, () => {
         state[targetObjectName][stateKey] = field.value;
         saveState();
+        if (targetObjectName === "event") updateEventSummary();
         if (targetObjectName === "shiftDraft") {
           $("handoffDraftState").textContent = "Draft autosaved";
           $("handoffDraftState").className = "pill";
@@ -1326,15 +1342,37 @@
   // ===========================================================================
   // NAVIGATION, EXPORT / IMPORT, AND EVENT LISTENERS
   // ===========================================================================
+  function setEventDetailsExpanded(expanded) {
+    const body = $("eventDetailsBody");
+    const button = $("toggleEventDetailsBtn");
+    const card = document.querySelector(".eventCard");
+    if (!body || !button || !card) return;
+    body.hidden = !expanded;
+    card.classList.toggle("collapsed", !expanded);
+    button.setAttribute("aria-expanded", String(expanded));
+    button.innerHTML = expanded
+      ? 'Hide details <span aria-hidden="true">⌃</span>'
+      : 'Edit details <span aria-hidden="true">⌄</span>';
+  }
+
   function switchView(viewName) {
     document.querySelectorAll(".view").forEach((view) => view.classList.toggle("active", view.id === `view-${viewName}`));
-    document.querySelectorAll("[data-view]").forEach((button) => button.classList.toggle("active", button.dataset.view === viewName));
+    document.querySelectorAll("[data-view]").forEach((button) => {
+      const active = button.dataset.view === viewName;
+      button.classList.toggle("active", active);
+      if (active) button.setAttribute("aria-current", "page");
+      else button.removeAttribute("aria-current");
+    });
+    // Keep the main workflow compact: event details are expanded on handoff and
+    // folded away on the checklist, incident, and settings views. They remain
+    // available from the persistent event card header at all times.
+    setEventDetailsExpanded(viewName === "handoff");
 
     const pageInfo = {
       handoff: { crumb: "RENTAL OPERATIONS / SHIFT HANDOFF", title: "Shift handoff", sub: "Leave the next technician a clear picture of the event, outstanding work, and anything that needs attention." },
       checklist: { crumb: "RENTAL OPERATIONS / TECH CHECKLIST", title: "Technician checklist", sub: "Take over, support the event, and close out your shift without leaving gaps." },
       incidents: { crumb: "RENTAL OPERATIONS / INCIDENT LOG", title: "Incident log", sub: "Track technical issues, hazards, immediate actions, and open follow-up work." },
-      settings: { crumb: "RENTAL OPERATIONS / CUSTOMIZE", title: "Customize Backstage", sub: "Edit checklist tasks and dropdown choices without editing source code." },
+      settings: { crumb: "WORKSPACE / SETTINGS & ADMIN", title: "Settings & administration", sub: "Manage the technician workflow, checklist, incident choices, and user accounts." },
     }[viewName] || { crumb: "RENTAL OPERATIONS", title: "Backstage", sub: "Technician tools for event rentals." };
     $("breadcrumb").textContent = pageInfo.crumb;
     $("pageTitle").textContent = pageInfo.title;
@@ -1657,13 +1695,35 @@
 
     $("newEventBtn").addEventListener("click", startNewEvent);
     $("logoutBtn")?.addEventListener("click", logoutFromBackstage);
-    $("printBtn").addEventListener("click", () => window.print());
-    $("exportBtn").addEventListener("click", exportBackup);
+    $("toggleEventDetailsBtn")?.addEventListener("click", () => {
+      const expanded = $("toggleEventDetailsBtn").getAttribute("aria-expanded") !== "true";
+      setEventDetailsExpanded(expanded);
+    });
+    $("printBtn").addEventListener("click", () => {
+      $("actionMenu")?.removeAttribute("open");
+      window.print();
+    });
+    $("exportBtn").addEventListener("click", () => {
+      $("actionMenu")?.removeAttribute("open");
+      exportBackup();
+    });
     $("importBtn").addEventListener("click", () => $("importFile").click());
     $("importFile").addEventListener("change", (event) => {
       const file = event.target.files?.[0];
+      $("actionMenu")?.removeAttribute("open");
       if (file) importBackup(file);
       event.target.value = "";
+    });
+    document.addEventListener("click", (event) => {
+      const menu = $("actionMenu");
+      if (menu?.open && !menu.contains(event.target)) menu.removeAttribute("open");
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      const menu = $("actionMenu");
+      if (!menu?.open) return;
+      menu.removeAttribute("open");
+      menu.querySelector("summary")?.focus();
     });
   }
 
@@ -1675,7 +1735,7 @@
     const isPublishedSite = Boolean(window.BACKSTAGE_STATIC_SITE);
     if (isPublishedSite) document.body.classList.add("authPending");
     let token = "";
-    let loginHint = "Sign in with your individual technician account.";
+    let loginHint = "";
     try {
       const signoutNotice = sessionStorage.getItem(SIGNOUT_NOTICE_KEY) || "";
       sessionStorage.removeItem(SIGNOUT_NOTICE_KEY);

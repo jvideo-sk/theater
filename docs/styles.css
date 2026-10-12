@@ -491,8 +491,6 @@ main { max-width: 1740px; }
 }
 .loginBrandmark { position: relative; box-shadow: 0 10px 25px rgb(76 125 187 / 20%), inset 0 1px 0 rgb(255 255 255 / 30%); }
 .loginDescription { font-size: 13px; }
-.loginHostInfo { border-color: #304357; background: rgb(8 14 21 / 65%); }
-.loginHostInfo strong { font-size: 12px; letter-spacing: .005em; }
 .loginTrustRow { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: -8px 0 19px; color: var(--muted); font-size: 11px; }
 .loginTrustRow > span { display: inline-flex; align-items: center; gap: 6px; }
 .loginTrustRow svg { color: var(--green); }
@@ -571,4 +569,98 @@ body.authPending .app { display: none !important; }
   .userCreateGrid { grid-template-columns: 1fr; }
   .adminUserRow { grid-template-columns: 1fr; }
   .adminUserTools { grid-column: auto; }
+}
+
+
+/* Backstage UX refinement: reduce clutter, surface primary actions, and keep context close. */
+.skipLink {
+  position: fixed; left: 14px; top: 10px; z-index: 2000; transform: translateY(-160%);
+  padding: 10px 14px; border-radius: 9px; background: var(--accent); color: #101c2c;
+  font-weight: 800; text-decoration: none; box-shadow: var(--shadow);
+}
+.skipLink:focus { transform: translateY(0); }
+body.authPending .skipLink { display: none; }
+
+/* Hide the deployment hostname on login; keep sign-in focused on technician identity. */
+.loginTrustRow { margin: 2px 0 20px; }
+.loginPanel { width: min(100%, 460px); }
+.loginDescription { max-width: 38ch; }
+.loginFoot { line-height: 1.65; }
+
+.navIcon {
+  display: inline-grid; place-items: center; width: 20px; flex: 0 0 20px;
+  font-size: 16px; color: var(--muted); line-height: 1;
+}
+.nav button.active .navIcon { color: var(--accent); }
+.navText { min-width: 0; }
+.nav button { min-height: 45px; }
+
+.actions { position: relative; }
+.newEventAction { min-width: 124px; }
+.actionMenu { position: relative; }
+.actionMenuTrigger { list-style: none; user-select: none; }
+.actionMenuTrigger::-webkit-details-marker { display: none; }
+.actionMenuTrigger::marker { content: ""; }
+.menuChevron { margin-left: 3px; color: var(--muted); transition: transform .15s ease; }
+.actionMenu[open] .menuChevron { transform: rotate(180deg); }
+.actionMenuPanel {
+  position: absolute; z-index: 50; top: calc(100% + 8px); right: 0; width: min(310px, calc(100vw - 30px));
+  padding: 7px; border: 1px solid #354a61; border-radius: 13px;
+  background: #101a26; box-shadow: 0 18px 50px rgb(0 0 0 / 45%);
+}
+.actionMenuItem {
+  display: flex; width: 100%; gap: 11px; align-items: center; text-align: left;
+  padding: 11px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--text);
+}
+.actionMenuItem:hover, .actionMenuItem:focus-visible { background: #1e2d3e; }
+.actionMenuItem > span:first-child {
+  display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 30px;
+  border: 1px solid #35485d; border-radius: 8px; background: #182638; color: var(--accent); font-size: 17px;
+}
+.actionMenuItem strong { display: block; font-size: 12px; }
+.actionMenuItem small { display: block; color: var(--muted); font-size: 10px; margin-top: 2px; }
+
+.eventHead { align-items: center; }
+.eventHeadActions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.eventToggle { white-space: nowrap; }
+.eventToggle span { display: inline-block; margin-left: 3px; }
+.eventDetailsBody[hidden] { display: none !important; }
+.eventCard.collapsed { padding-bottom: 14px; }
+.eventCard.collapsed .eventHead { margin-bottom: 0; }
+.eventCard.collapsed .eventHead p { max-width: 60ch; }
+.metaLine { padding-top: 9px; border-top: 1px solid rgb(85 108 133 / 18%); }
+#saveStatus { min-width: 108px; justify-content: center; }
+
+/* Consistent validation and disabled-state feedback. */
+.field:invalid:not(:placeholder-shown), textarea:invalid:not(:placeholder-shown) { border-color: #8c4a55; }
+.btn:focus-visible, .actionMenuTrigger:focus-visible, .actionMenuItem:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.empty { line-height: 1.65; }
+.historyCard, .incident, .adminUserRow, .settingsSection { transition: border-color .15s ease, background .15s ease; }
+.historyCard:hover, .adminUserRow:hover { border-color: #405872; }
+
+@media (max-width: 1400px) {
+  .actionMenuPanel { left: 0; right: auto; }
+  .sessionControls { border-left: 0; margin-left: 0; padding-left: 0; }
+}
+@media (max-width: 900px) {
+  .actions { gap: 7px; }
+  .sessionControls { flex-wrap: wrap; }
+  .eventHead { align-items: flex-start; }
+  .eventHeadActions { align-items: flex-end; }
+}
+@media (max-width: 600px) {
+  main { padding-inline: 13px; }
+  .actions { display: flex; width: 100%; }
+  .newEventAction, .actionMenuTrigger { min-height: 42px; }
+  .actionMenu { flex: 0 0 auto; }
+  .sessionControls { display: flex; width: 100%; }
+  .eventHead { flex-direction: column; align-items: stretch; }
+  .eventHeadActions { justify-content: space-between; width: 100%; }
+  .eventHeadActions .pill { flex: 0 0 auto; }
+  .eventToggle { flex: 0 0 auto; }
+  .actionMenuPanel { left: 0; right: auto; }
+}
+@media print {
+  .skipLink, .actionMenu, .eventToggle { display: none !important; }
+  .eventDetailsBody[hidden] { display: block !important; }
 }

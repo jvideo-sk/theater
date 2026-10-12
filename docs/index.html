@@ -10,16 +10,13 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body class="authPending">
+  <a class="skipLink" href="#mainContent">Skip to workspace</a>
   <div class="loginScreen" id="loginScreen">
     <section class="loginPanel" role="dialog" aria-modal="true" aria-labelledby="loginTitle" aria-describedby="loginDescription">
       <div class="loginBrandmark" aria-hidden="true">B</div>
       <p class="loginEyebrow">BACKSTAGE · TECHNICIAN DESK</p>
       <h1 id="loginTitle">Sign in to Backstage</h1>
       <p class="loginDescription" id="loginDescription">Sign in with your individual technician account to access the shared event handoff, checklist, and incident log.</p>
-      <div class="loginHostInfo">
-        <span>Shared data host</span>
-        <strong id="loginHostName">https://theatre-api.jvideo.dev</strong>
-      </div>
       <div class="loginTrustRow">
         <span><svg aria-hidden="true" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg> Host-verified access</span>
         <span class="httpsBadge"><span class="sessionDot" aria-hidden="true"></span> HTTPS</span>
@@ -48,20 +45,20 @@
       <div>
         <div class="navlabel">Rental operations</div>
         <nav class="nav" aria-label="Main navigation">
-          <button type="button" class="active" data-view="handoff"><span aria-hidden="true">⇄</span> Shift handoff <span class="navCount" id="handoffNavCount">0</span></button>
-          <button type="button" data-view="checklist"><span aria-hidden="true">☑</span> Tech checklist <span class="navCount" id="checkNavCount">0%</span></button>
-          <button type="button" data-view="incidents"><span aria-hidden="true">⚠</span> Incident log <span class="pill amber" id="openIncidentNav">0 open</span></button>
-          <button type="button" data-view="settings"><span aria-hidden="true">⚙</span> Customize</button>
+          <button type="button" class="active" data-view="handoff"><span class="navIcon" aria-hidden="true">⇄</span><span class="navText">Shift handoff</span><span class="navCount" id="handoffNavCount">0</span></button>
+          <button type="button" data-view="checklist"><span class="navIcon" aria-hidden="true">☑</span><span class="navText">Tech checklist</span><span class="navCount" id="checkNavCount">0%</span></button>
+          <button type="button" data-view="incidents"><span class="navIcon" aria-hidden="true">⚠</span><span class="navText">Incident log</span><span class="pill amber" id="openIncidentNav">0 open</span></button>
+          <button type="button" data-view="settings"><span class="navIcon" aria-hidden="true">⚙</span><span class="navText">Settings</span></button>
         </nav>
       </div>
 
       <div class="sideNote">
-        <span class="dot"></span><strong>Host-backed recordkeeping</strong>
-        <p>This published desk always uses the shared theatre host. If the host is unavailable, the desk stays locked rather than switching to browser-only storage.</p>
+        <span class="dot"></span><strong>Shared venue record</strong>
+        <p>Handoffs, checklist progress, and incidents are shared with the team through the theatre host. If connection fails, report it rather than keeping a separate local copy.</p>
       </div>
     </aside>
 
-    <main>
+    <main id="mainContent" tabindex="-1">
       <header class="topbar">
         <div>
           <div class="eyebrow" id="breadcrumb">RENTAL OPERATIONS / SHIFT HANDOFF</div>
@@ -69,12 +66,17 @@
           <p class="sub" id="pageSub">Leave the next technician a clear picture of the event, outstanding work, and anything that needs attention.</p>
         </div>
         <div class="actions">
-          <button type="button" class="btn" id="newEventBtn">＋ New event</button>
-          <button type="button" class="btn" id="printBtn">⎙ Print</button>
-          <button type="button" class="btn" id="exportBtn">↓ Export backup</button>
-          <button type="button" class="btn" id="importBtn">↑ Import backup</button>
+          <button type="button" class="btn primary newEventAction" id="newEventBtn"><span aria-hidden="true">＋</span> New event</button>
+          <details class="actionMenu" id="actionMenu">
+            <summary class="btn actionMenuTrigger"><span aria-hidden="true">⋯</span> More actions <span class="menuChevron" aria-hidden="true">⌄</span></summary>
+            <div class="actionMenuPanel" role="group" aria-label="More event actions">
+              <button type="button" class="actionMenuItem" id="printBtn"><span aria-hidden="true">⎙</span><span><strong>Print current view</strong><small>Open the browser print dialog</small></span></button>
+              <button type="button" class="actionMenuItem" id="exportBtn"><span aria-hidden="true">↓</span><span><strong>Export backup</strong><small>Download a JSON copy of the record</small></span></button>
+              <button type="button" class="actionMenuItem" id="importBtn"><span aria-hidden="true">↑</span><span><strong>Import backup</strong><small>Restore a previously exported JSON file</small></span></button>
+            </div>
+          </details>
           <input accept="application/json,.json" class="hidden" id="importFile" type="file">
-          <div class="sessionControls" role="group" aria-label="Shared technician session">
+          <div class="sessionControls" role="group" aria-label="Signed-in technician">
             <div class="sessionIdentity">
               <span class="sessionAvatar" id="sessionAvatar" aria-hidden="true">BT</span>
               <span class="sessionCopy"><strong id="sessionUserName">Technician</strong><small><span class="sessionDot" aria-hidden="true"></span><span id="sessionUserRole">Individual account</span></small></span>
@@ -96,9 +98,13 @@
 
       <section class="card eventCard" aria-labelledby="eventDetailsTitle">
         <div class="sectionhead eventHead">
-          <div><h2 id="eventDetailsTitle">Current event</h2><p>These details appear on handoffs and incident reports.</p></div>
-          <span class="pill amber" id="saveStatus">Connecting…</span>
+          <div><h2 id="eventDetailsTitle">Current event</h2><p id="eventSummaryText">Add the event name, date, and phase once. That context is shared across handoffs and incident reports.</p></div>
+          <div class="eventHeadActions">
+            <span class="pill amber" id="saveStatus" role="status" aria-live="polite">Connecting…</span>
+            <button type="button" class="btn small quiet eventToggle" id="toggleEventDetailsBtn" aria-expanded="true" aria-controls="eventDetailsBody">Hide details <span aria-hidden="true">⌃</span></button>
+          </div>
         </div>
+        <div id="eventDetailsBody" class="eventDetailsBody">
         <div class="fields eventFields">
           <div class="fieldgroup wide"><label class="label" for="eventName">Event / rental name</label><input class="field" id="eventName" placeholder="e.g. Dance recital / company meeting"></div>
           <div class="fieldgroup"><label class="label" for="eventDate">Event date</label><input class="field" id="eventDate" type="date"></div>
@@ -110,7 +116,8 @@
           <div class="fieldgroup"><label class="label" for="eventContact">Primary contact / radio channel</label><input class="field" id="eventContact" placeholder="Who to call, channel, location"></div>
           <div class="fieldgroup wide"><label class="label" for="eventSchedule">Schedule / timing notes</label><textarea id="eventSchedule" class="compactText" placeholder="Call times, doors, start/end, breaks, strike deadline…"></textarea></div>
         </div>
-        <div class="metaLine"><span>Event record: <strong id="recordId">NEW</strong></span><span>Last saved: <strong id="lastSaved">Not saved yet</strong></span></div>
+        <div class="metaLine"><span>Event record <strong id="recordId">NEW</strong></span><span>Last saved <strong id="lastSaved" aria-live="polite">Not saved yet</strong></span></div>
+        </div>
       </section>
 
       <section class="view active" id="view-handoff">
