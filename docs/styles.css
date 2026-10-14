@@ -819,3 +819,314 @@ body.authPending .skipLink { display: none; }
   .scheduleSummarybar { grid-template-columns:1fr 1fr; }
   .scheduleSummarybar .summary:last-child { grid-column:1 / -1; }
 }
+
+/* ========================================================================== */
+/* Production-office visual pass: structured, legible, low-gloss surfaces.    */
+/* Existing brand and status colors are intentionally preserved.             */
+/* ========================================================================== */
+:root {
+  --bg: #0a111a;
+  --panel: #111b27;
+  --panel2: #182637;
+  --line: #2a3b4e;
+  --text: #f1f6fc;
+  --muted: #b1bdcb;
+  --dim: #8090a3;
+  --accent: #a3c8ff;
+  --red: #ff7b85;
+  --amber: #f4cc7b;
+  --green: #75dfb2;
+  --shadow: 0 12px 28px rgb(0 0 0 / 16%);
+}
+
+html { scroll-padding-top: 18px; }
+body {
+  background:
+    radial-gradient(ellipse at 84% -18%, rgb(52 86 120 / 17%), transparent 42%),
+    var(--bg);
+  letter-spacing: 0;
+}
+
+/* Stable app frame and a quieter, more technical navigation rail. */
+.app { grid-template-columns: 252px minmax(0, 1fr); }
+.sidebar {
+  padding: 23px 13px 18px;
+  gap: 27px;
+  background: #0b121b;
+  border-right: 1px solid #27384b;
+  box-shadow: none;
+}
+.brand { gap: 10px; padding: 0 8px 20px; border-bottom: 1px solid #253548; }
+.brandmark {
+  width: 38px; height: 38px; border-radius: 8px;
+  background: linear-gradient(145deg, #a3c8ff, #5e86bb);
+  box-shadow: none;
+  font-size: 20px;
+}
+.brandmark::after { width: 7px; height: 7px; right: -2px; bottom: -2px; border-width: 2px; }
+.brand b { font-size: 13px; letter-spacing: .13em; }
+.brand small { font-size: 9px; letter-spacing: .16em; }
+.navlabel { padding: 0 10px; margin-bottom: 8px; font-size: 9px; letter-spacing: .16em; }
+.nav { gap: 3px; }
+.nav button {
+  min-height: 42px;
+  padding: 10px 11px;
+  gap: 10px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  color: #a8b6c6;
+  font-size: 12px;
+  font-weight: 650;
+  box-shadow: none;
+}
+.nav button.active {
+  color: var(--text);
+  background: #19283a;
+  border-color: #2c4158;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.nav button:hover { background: #162231; border-color: #26394d; }
+.navIcon { font-size: 15px; color: #8295aa; }
+.nav button.active .navIcon { color: var(--accent); }
+.navCount { font-variant-numeric: tabular-nums; font-size: 10px; }
+.nav .pill { margin-left: auto; font-size: 8px; padding: 3px 6px; }
+.sideNote {
+  padding: 12px;
+  border-radius: 8px;
+  border-color: #2a3b4e;
+  background: #111a25;
+  line-height: 1.55;
+}
+.sideNote strong { color: #dce7f3; font-size: 11px; }
+.sideNote p { color: #95a5b7; font-size: 10px; }
+
+/* Page header: stronger labels, tighter rhythm, consistent action controls. */
+main { max-width: 1840px; padding: 27px clamp(20px, 2.5vw, 42px) 48px; }
+.topbar {
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 20px;
+  padding-bottom: 19px;
+  border-bottom: 1px solid #26384b;
+}
+.eyebrow { color: var(--accent); font-size: 9px; letter-spacing: .16em; }
+.pageTitle { margin-top: 6px; font-size: clamp(27px, 2.4vw, 33px); font-weight: 760; letter-spacing: -.035em; }
+.sub { margin-top: 7px; max-width: 760px; color: #9eafc1; font-size: 12px; line-height: 1.6; }
+.actions { gap: 7px; }
+.btn {
+  min-height: 36px;
+  border-radius: 7px;
+  padding: 8px 11px;
+  border-color: #35485d;
+  background: #172332;
+  box-shadow: none;
+  font-size: 11px;
+  font-weight: 750;
+}
+.btn:hover { background: #202f41; border-color: #4a627c; box-shadow: none; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #0d1b2b; box-shadow: none; }
+.btn.primary:hover { background: #b6d3ff; border-color: #b6d3ff; }
+.btn.danger { background: #301c23; border-color: #713b48; color: #ff9aa1; }
+.btn.quiet { background: transparent; box-shadow: none; }
+.btn.small { min-height: 30px; padding: 5px 8px; border-radius: 6px; font-size: 10px; }
+.actionMenuPanel { border-radius: 9px; border-color: #34495f; background: #101a26; box-shadow: 0 18px 38px rgb(0 0 0 / 35%); }
+.actionMenuItem { border-radius: 6px; }
+.sessionControls { gap: 9px; padding-left: 12px; border-color: #2b3d50; }
+.sessionAvatar { border-radius: 8px; box-shadow: none; }
+.sessionCopy strong { font-size: 11px; }
+.logoutBtn { background: transparent; }
+
+/* Alerts and cards use clear edges instead of layered gloss. */
+.notice {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  gap: 10px;
+  border-radius: 7px;
+  border-left: 3px solid var(--amber);
+  border-top-color: #5a4a2c;
+  border-right-color: #5a4a2c;
+  border-bottom-color: #5a4a2c;
+  background: #211d16;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.notice strong { font-size: 11px; margin-bottom: 2px; }
+.card {
+  padding: 17px;
+  border-radius: 10px;
+  border-color: #2b3c50;
+  background: #111b27;
+  box-shadow: 0 8px 22px rgb(0 0 0 / 10%);
+}
+.eventCard { background: #111b27; box-shadow: none; }
+.sectionhead { margin-top: 24px; margin-bottom: 12px; align-items: center; }
+.view > .sectionhead:first-child,
+.view > .summarybar:first-child,
+.view > .operationsWelcome:first-child { margin-top: 0; }
+.sectionhead h2 { font-size: 15px; font-weight: 760; letter-spacing: -.015em; }
+.sectionhead p { max-width: 760px; font-size: 11px; line-height: 1.55; }
+.innerHead, .eventHead { margin: 0 0 15px; }
+.eventHead { padding-bottom: 13px; border-bottom: 1px solid #28394c; }
+.eventHead h2 { font-size: 13px; }
+.eventHeadActions { gap: 8px; }
+.eventToggle { font-size: 10px !important; }
+.cardTitle { font-size: 13px; font-weight: 760; }
+.pill { border-radius: 5px; padding: 4px 7px; font-size: 9px; letter-spacing: .06em; }
+.pill.green { background: #14271f; }
+.pill.amber { background: #282116; }
+.pill.red { background: #2c191e; }
+
+/* Forms and data entry: predictable control height and sharper focus states. */
+.label { color: #aebdce; font-size: 10px; font-weight: 750; letter-spacing: .015em; }
+.field, select, textarea {
+  border: 1px solid #304256;
+  border-radius: 7px;
+  background: #0c141e;
+  padding: 9px 10px;
+  font-size: 12px;
+  box-shadow: none;
+}
+.field, select { min-height: 37px; }
+textarea { min-height: 88px; line-height: 1.55; }
+.field:focus, select:focus, textarea:focus {
+  border-color: #8fbaff;
+  box-shadow: 0 0 0 3px rgb(143 186 255 / 10%);
+}
+.field:disabled, select:disabled, textarea:disabled { opacity: .75; }
+.fields { gap: 13px; }
+.formSpace { margin-top: 12px; }
+.helpText { font-size: 10px; line-height: 1.5; }
+
+/* Metrics, call-sheet rows and operations panels. */
+.operationsWelcome { margin-bottom: 14px; }
+.operationsWelcome h2 { font-size: clamp(22px, 2.2vw, 28px); letter-spacing: -.03em; }
+.operationsWelcome p:not(.eyebrow) { font-size: 11px; }
+.operationsTimestamp { font-size: 10px; }
+.boardHero {
+  padding: clamp(18px, 2.4vw, 25px);
+  border-radius: 10px;
+  border: 1px solid #30465d;
+  border-left: 3px solid var(--accent);
+  background: #13202e;
+  box-shadow: none;
+}
+.boardHero h2 { font-size: clamp(22px, 2.5vw, 29px); letter-spacing: -.03em; }
+.boardHero p { font-size: 11px; line-height: 1.55; }
+.overline { font-size: 9px; letter-spacing: .17em; }
+.opsMetrics { gap: 10px; }
+.opsMetric {
+  padding: 14px;
+  border-radius: 8px;
+  border-color: #293a4e;
+  background: #111b27;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 2%);
+}
+.opsMetric > span { font-size: 9px; letter-spacing: .09em; }
+.opsMetric strong { margin-top: 8px; font-size: clamp(20px, 2vw, 24px); }
+.opsMetric small { margin-top: 5px; font-size: 10px; }
+.operationsGrid { gap: 12px; }
+.boardPanel { padding: 15px; }
+.boardPanelHead { padding-bottom: 11px; margin-bottom: 3px; border-bottom: 1px solid #293a4d; }
+.boardPanelHead h3 { font-size: 12px; font-weight: 780; }
+.boardPanelHead p { font-size: 10px; }
+.boardCrewRow, .boardCompactItem { border-top-color: #263648; }
+.boardCrewTime strong, .boardCrewInfo strong { font-size: 11px; }
+.boardCrewTime small, .boardCrewInfo small { font-size: 10px; }
+.boardCrewRow.isOnDuty { background: rgb(117 223 178 / 4%); }
+.shiftStatus { border-radius: 4px; padding: 3px 5px; font-size: 8px; }
+.boardEmptyIcon, .handoffStamp { border-radius: 7px; box-shadow: none; }
+.myShiftTime { font-size: 19px; }
+.boardCompactCopy strong { font-size: 11px; }
+.boardCompactCopy small { font-size: 10px; }
+
+/* Shift tracking, incidents and schedule records. */
+.summarybar { gap: 10px; margin-bottom: 15px; }
+.summary {
+  padding: 14px;
+  border-radius: 8px;
+  border-color: #293a4e;
+  background: #111b27;
+}
+.summary span { font-size: 10px; }
+.summary strong { margin-top: 7px; font-size: 23px; }
+.checkSummary { padding: 12px 14px; border-radius: 8px; background: #111b27; }
+.checkSummary strong { font-size: 17px; }
+.checkgrid { gap: 12px; }
+.checkitem { gap: 10px; padding: 11px 0; border-bottom-color: #28394b; }
+.checkitem b { font-size: 11px; }
+.checkitem small { font-size: 10px; line-height: 1.5; }
+.progress { height: 5px; border-radius: 3px; background: #273748; }
+.progress span { background: var(--green); }
+.incidentLayout { gap: 13px; }
+.historyCard, .scheduledShiftRow, .adminUserRow {
+  border-radius: 8px;
+  border-color: #293a4e;
+  background: #101a25;
+  box-shadow: none;
+}
+.historyCard { padding: 14px; }
+.historyTop { gap: 10px; }
+.historyWho { font-size: 12px; }
+.historyMeta, .multiline { font-size: 11px; }
+.historyActions { border-top-color: #29394b; }
+.incidentPriority { border-radius: 4px; font-size: 8px; }
+.filters { gap: 7px; }
+.filters .field { min-height: 35px; }
+.timeSheetListHeader { border-top-color: #29394b; }
+.timeSheetList { gap: 7px; }
+.scheduledShiftRow { padding: 11px; }
+.scheduleAdminEditor { padding: 13px; border-radius: 8px; background: #121e2b; }
+.eventLockedNotice { border-radius: 7px; }
+.checklistContext { border-radius: 7px; }
+.empty { border-radius: 8px; }
+
+/* Sign-in remains visually consistent with the production workspace. */
+.loginScreen {
+  background:
+    radial-gradient(ellipse at 50% -6%, rgb(70 110 155 / 19%), transparent 44%),
+    #080e15;
+}
+.loginPanel {
+  border-radius: 12px;
+  border-color: #2d4055;
+  background: #111b27;
+  box-shadow: 0 25px 70px rgb(0 0 0 / 36%);
+}
+.loginPanel::before { height: 2px; }
+.loginBrandmark { border-radius: 9px; box-shadow: none; }
+.loginPanel h1 { letter-spacing: -.035em; }
+.loginSubmit { border-radius: 7px; }
+.loginTrustRow { font-size: 10px; }
+.loginFoot { border-top: 1px solid #29394b; padding-top: 14px; }
+
+/* Compact-screen behavior: retain the navigation-first hierarchy. */
+@media (min-width: 901px) {
+  .sidebar { position: sticky; align-self: start; }
+}
+@media (max-width: 1200px) {
+  .app { grid-template-columns: 224px minmax(0, 1fr); }
+  main { padding-inline: 24px; }
+}
+@media (max-width: 900px) {
+  .app { grid-template-columns: 1fr; }
+  .sidebar { padding: 14px; gap: 13px; }
+  .brand { padding-bottom: 13px; }
+  .sideNote { display: none; }
+  .nav button { border-radius: 6px; }
+  main { padding: 20px 18px 38px; }
+  .topbar { gap: 16px; }
+}
+@media (max-width: 600px) {
+  main { padding: 17px 12px 30px; }
+  .card { padding: 13px; }
+  .topbar { padding-bottom: 15px; }
+  .pageTitle { font-size: 26px; }
+  .sectionhead { align-items: flex-start; }
+  .operationsWelcome { gap: 7px; }
+  .boardHero { padding: 16px; }
+  .opsMetric { padding: 11px; }
+  .opsMetric strong { font-size: 19px; }
+  .summary { padding: 11px; }
+  .summary strong { font-size: 21px; }
+  .sessionControls { padding-top: 10px; border-top-color: #29394b; }
+}
