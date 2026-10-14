@@ -9,8 +9,8 @@
   const DEFAULT_CHECKLIST_SECTIONS = [
     {
       id: "takeover",
-      title: "Take over the shift",
-      description: "Get oriented before picking up active work.",
+      title: "On arrival / shift takeover",
+      description: "Confirm the event status, assigned post, risks, and next actions before taking over.",
       items: [
         { id: "read-handoff", label: "Read the latest handoff", help: "Review current status, next priorities, open tasks, and any acknowledgements or updates." },
         { id: "review-incidents", label: "Review all open incidents", help: "Identify anything urgent, who owns it, and what must happen next." },
@@ -38,7 +38,7 @@
       title: "Before leaving / handoff",
       description: "Do not leave the next person guessing.",
       items: [
-        { id: "update-phase", label: "Update the current event phase", help: "Set the current phase above to reflect what is actually happening now." },
+        { id: "update-phase", label: "Confirm the current event phase", help: "Check that the administrator-set phase matches what is happening. If it needs changing, tell the event lead or administrator rather than editing the event yourself." },
         { id: "update-incidents", label: "Update incidents and follow-up owners", help: "Resolve only items that are genuinely resolved; leave the rest open with a clear owner." },
         { id: "write-status", label: "Write the current situation and next actions", help: "State what's working, what is not, and the first actions the incoming technician should take." },
         { id: "brief-incoming", label: "Brief the incoming technician directly", help: "Where possible, talk through urgent/open items and confirm they know what needs attention." },
@@ -78,8 +78,10 @@
   let saveQueue = Promise.resolve();
   let serverStorageEnabled = false;
   let hostConnectionProblem = false;
+  let serverRevision = 0;
   let activeSessionToken = "";
   let activeUser = null;
+  let activeView = "operations";
   let technicianDirectory = [];
   let reloadAfterLogin = false;
   let state = createBlankState();
@@ -205,6 +207,8 @@
         notes: "",
       },
       checks: {},
+      shiftChecks: {},
+      revision: 0,
       handoffs: [],
       incidents: [],
       shiftSchedule: [],
@@ -219,10 +223,12 @@
       ...blank,
       ...saved,
       eventId: saved.eventId || blank.eventId,
+      revision: Number.isSafeInteger(saved.revision) && saved.revision >= 0 ? saved.revision : 0,
       settings: normalizeSettings(saved.settings),
       event: { ...blank.event, ...(saved.event || {}) },
       shiftDraft: { ...blank.shiftDraft, ...(saved.shiftDraft || {}) },
       checks: saved.checks && typeof saved.checks === "object" ? saved.checks : {},
+      shiftChecks: saved.shiftChecks && typeof saved.shiftChecks === "object" ? saved.shiftChecks : {},
       handoffs: Array.isArray(saved.handoffs) ? saved.handoffs : [],
       incidents: Array.isArray(saved.incidents) ? saved.incidents : [],
       shiftSchedule: Array.isArray(saved.shiftSchedule) ? saved.shiftSchedule : [],
@@ -364,6 +370,12 @@
     const roleNode = $("sessionUserRole");
     const avatarNode = $("sessionAvatar");
     const adminPanel = $("usersAdminPanel");
+    const scheduleEditor = $("scheduleAdminEditor");
+    const scheduleRoleBadge = $("scheduleRoleBadge");
+    const scheduleReadOnlyBadge = $("scheduleReadOnlyBadge");
+    if (scheduleEditor) scheduleEditor.hidden = !isAdmin();
+    if (scheduleRoleBadge) { scheduleRoleBadge.textContent = isAdmin() ? "Administrator editor" : "Read-only"; scheduleRoleBadge.className = `pill ${isAdmin() ? "green" : ""}`; }
+    if (scheduleReadOnlyBadge) { scheduleReadOnlyBadge.textContent = isAdmin() ? "Admin controls enabled" : "Shared read-only view"; scheduleReadOnlyBadge.className = `pill ${isAdmin() ? "green" : ""}`; }
     if (nameNode) nameNode.textContent = activeUser?.displayName || "Signed-in technician";
     if (roleNode) roleNode.textContent = activeUser ? `${activeUser.username} · ${activeUser.role === "admin" ? "Administrator" : "Technician"}` : "Not signed in";
     if (avatarNode) {
@@ -381,8 +393,6 @@
 
     const settingsView = $("view-settings");
     if (settingsView) settingsView.hidden = !isAdministrator;
-    const timeSheetPanel = $("timeSheetAdminPanel");
-    if (timeSheetPanel) timeSheetPanel.hidden = !isAdministrator;
     updateEventEditPermissions();
     if (!isAdministrator && settingsView?.classList.contains("active")) {
       switchView("handoff");
@@ -478,6 +488,21 @@
     });
   }
 
+  async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+    const controller = new AbortController();
+    const callerSignal = options.signal;
+    const abortFromCaller = () => controller.abort(callerSignal?.reason);
+    if (callerSignal?.aborted) controller.abort(callerSignal.reason);
+    else callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+      callerSignal?.removeEventListener("abort", abortFromCaller);
+    }
+  }
+
   async function hostRequest(url, options = {}) {
     if (window.BACKSTAGE_STATIC_SITE && !String(url).startsWith("/api/")) {
       throw new Error("The published site may contact only its configured theatre API.");
@@ -492,7 +517,7 @@
     };
     let token = readToken();
     if (token) headers.set("X-Theatre-Session", token);
-    let response = await fetch(targetUrl, { cache: "no-store", ...options, headers });
+    let response = await fetchWithTimeout(targetUrl, { cache: "no-store", ...options, headers });
 
     if (response.status === 401) {
       clearAccountSession();
@@ -504,7 +529,7 @@
       }
       token = freshToken;
       headers.set("X-Theatre-Session", token);
-      response = await fetch(targetUrl, { cache: "no-store", ...options, headers });
+      response = await fetchWithTimeout(targetUrl, { cache: "no-store", ...options, headers });
       if (response.status === 401) {
         clearAccountSession();
         showLoginPage("Your account session could not be verified. Please sign in again.");
@@ -530,6 +555,8 @@
     try {
       const response = await hostRequest("/api/state", { method: "GET" });
       const saved = await response.json();
+      const etagRevision = parseInt(String(response.headers.get("ETag") || "").replace(/[^0-9]/g, ""), 10);
+      serverRevision = Number.isSafeInteger(etagRevision) && etagRevision >= 0 ? etagRevision : (Number(saved?.revision) || 0);
       serverStorageEnabled = true;
       hostConnectionProblem = false;
       if (isValidState(saved)) {
@@ -729,16 +756,24 @@
       return true;
     }
 
-    const snapshot = JSON.stringify(state);
-    const request = saveQueue.catch(() => undefined).then(() => hostRequest("/api/state", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: snapshot,
-    }));
+    // Snapshot each logical write and use If-Match so two technician tabs cannot
+    // silently overwrite each other's newer work. The host increments revisions.
+    const snapshotState = JSON.parse(JSON.stringify(state));
+    const request = saveQueue.catch(() => undefined).then(() => {
+      snapshotState.revision = serverRevision;
+      return hostRequest("/api/state", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "If-Match": `"${serverRevision}"` },
+        body: JSON.stringify(snapshotState),
+      });
+    });
     saveQueue = request;
 
     try {
-      await request;
+      const response = await request;
+      const etagRevision = parseInt(String(response.headers.get("ETag") || "").replace(/[^0-9]/g, ""), 10);
+      if (Number.isSafeInteger(etagRevision) && etagRevision >= 0) serverRevision = etagRevision;
+      state.revision = serverRevision;
       hostConnectionProblem = false;
       $("saveStatus").textContent = "Saved on host";
       $("saveStatus").className = "pill green";
@@ -795,6 +830,10 @@
     renderIncomingTechnicianOptions(state.shiftDraft?.incoming || "");
     renderShiftScheduleTechnicianOptions();
     renderTimeSheet();
+  }
+
+  function normalizeUsername(value) {
+    return String(value || "").trim().toLowerCase();
   }
 
   function normalizeTechnicianSelection(value) {
@@ -881,29 +920,108 @@
     }
   }
 
+  function parseShiftDateTime(date, time) {
+    if (!date || !time) return NaN;
+    return new Date(`${date}T${time}:00`).getTime();
+  }
+
+  function compareShifts(a, b) {
+    return `${a.date}T${a.startTime}`.localeCompare(`${b.date}T${b.startTime}`);
+  }
+
+  function getShiftStatus(shift, now = Date.now()) {
+    const start = parseShiftDateTime(shift.date, shift.startTime);
+    const end = parseShiftDateTime(shift.date, shift.endTime);
+    if (Number.isFinite(start) && Number.isFinite(end) && start <= now && now < end) return "on-duty";
+    if (Number.isFinite(start) && start > now) return "upcoming";
+    return "completed";
+  }
+
+  function formatShiftDate(date) {
+    if (!date) return "Date not set";
+    const parsed = new Date(`${date}T12:00:00`);
+    return Number.isNaN(parsed.getTime()) ? date : parsed.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+  }
+
+  function formatShiftTime(time) {
+    if (!time || !/^\d{2}:\d{2}$/.test(time)) return time || "—";
+    const parsed = new Date(`${localDateString()}T${time}:00`);
+    return Number.isNaN(parsed.getTime()) ? time : parsed.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+
+  function getSortedShifts() {
+    return [...(state.shiftSchedule || [])].sort(compareShifts);
+  }
+
+  function getCurrentOrNextShiftForUser(user = activeUser) {
+    if (!user) return null;
+    const now = Date.now();
+    const own = getSortedShifts().filter((shift) => normalizeUsername(shift.technicianUsername) === normalizeUsername(user.username));
+    const current = own.find((shift) => getShiftStatus(shift, now) === "on-duty");
+    if (current) return current;
+    // Let technicians prepare the checklist during the day before call, but don't
+    // attach them to a far-future shift in place of today's actual assignment.
+    const nextWithin36Hours = own.find((shift) => {
+      const starts = parseShiftDateTime(shift.date, shift.startTime);
+      return starts > now && starts - now <= 36 * 60 * 60 * 1000;
+    });
+    return nextWithin36Hours || null;
+  }
+
+  function getChecksForShift(shift = getCurrentOrNextShiftForUser()) {
+    if (!shift) return {};
+    const allShiftChecks = state.shiftChecks && typeof state.shiftChecks === "object" ? state.shiftChecks : {};
+    const checks = allShiftChecks[shift.id];
+    return checks && typeof checks === "object" ? checks : {};
+  }
+
   function renderTimeSheet() {
     const list = $("timeSheetList");
     if (!list) return;
     renderShiftScheduleTechnicianOptions();
-    const shifts = [...(state.shiftSchedule || [])].sort((a, b) => `${a.date}T${a.startTime}`.localeCompare(`${b.date}T${b.startTime}`));
+    const allShifts = getSortedShifts();
+    const today = localDateString();
+    const now = Date.now();
+    const range = $("scheduleRangeFilter")?.value || "all";
+    const query = String($("scheduleSearch")?.value || "").trim().toLowerCase();
+    let shifts = allShifts.filter((shift) => {
+      const status = getShiftStatus(shift, now);
+      if (range === "today" && shift.date !== today) return false;
+      if (range === "upcoming" && status === "completed") return false;
+      if (range === "past" && status !== "completed") return false;
+      if (query && ![shift.technicianDisplayName, shift.technicianUsername, shift.notes, shift.date].join(" ").toLowerCase().includes(query)) return false;
+      return true;
+    });
     const count = $("timeSheetCount");
-    if (count) count.textContent = `${shifts.length} ${shifts.length === 1 ? "shift" : "shifts"}`;
+    if (count) count.textContent = `${shifts.length} of ${allShifts.length} shifts`;
+    if ($("scheduleNavCount")) $("scheduleNavCount").textContent = String(allShifts.length);
+    if ($("scheduleShiftTotal")) $("scheduleShiftTotal").textContent = String(allShifts.length);
+    if ($("scheduleTodayTotal")) $("scheduleTodayTotal").textContent = String(allShifts.filter((shift) => shift.date === today).length);
+    const nextShift = allShifts.find((shift) => parseShiftDateTime(shift.date, shift.startTime) > now);
+    if ($("scheduleNextWho")) $("scheduleNextWho").textContent = nextShift?.technicianDisplayName || "—";
     if (!shifts.length) {
-      list.innerHTML = '<div class="empty"><strong>No shifts scheduled</strong>Administrators can assign technician coverage for the active event above.</div>';
+      list.innerHTML = allShifts.length
+        ? '<div class="empty"><strong>No shifts match those filters</strong>Change the date range or search term to see more of the call sheet.</div>'
+        : '<div class="empty"><strong>No shifts scheduled</strong>An administrator can assign coverage for this event.</div>';
       updateIncomingScheduleHint(false);
+      renderOperationsBoard();
       return;
     }
     list.innerHTML = shifts.map((shift) => {
       const activeAssignedUser = technicianDirectory.some((user) => user.username === shift.technicianUsername);
       const technician = `${shift.technicianDisplayName || shift.technicianUsername || "Unassigned"}${activeAssignedUser ? "" : " · inactive account"}`;
-      const dateLabel = shift.date ? new Date(`${shift.date}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" }) : "Date not set";
-      return `<article class="scheduledShiftRow" data-shift-row="${escapeHtml(shift.id)}">
-        <div class="scheduledShiftWhen"><strong>${escapeHtml(dateLabel)}</strong><span>${escapeHtml(shift.startTime || "??:??")}–${escapeHtml(shift.endTime || "??:??")}</span></div>
-        <div class="scheduledShiftWho"><strong>${escapeHtml(technician)}</strong><small>@${escapeHtml(shift.technicianUsername || "unassigned")}${shift.notes ? ` · ${escapeHtml(shift.notes)}` : ""}</small></div>
-        <button type="button" class="btn small danger" data-delete-scheduled-shift="${escapeHtml(shift.id)}">Remove</button>
+      const status = getShiftStatus(shift, now);
+      const statusLabel = status === "on-duty" ? "ON DUTY" : status === "upcoming" ? "UP NEXT" : "COMPLETED";
+      const isMine = normalizeUsername(shift.technicianUsername) === normalizeUsername(activeUser?.username);
+      return `<article class="scheduledShiftRow ${status === "on-duty" ? "shiftCurrent" : ""} ${isMine ? "shiftMine" : ""}" data-shift-row="${escapeHtml(shift.id)}">
+        <div class="scheduledShiftWhen"><strong>${escapeHtml(formatShiftDate(shift.date))}</strong><span>${escapeHtml(formatShiftTime(shift.startTime))}–${escapeHtml(formatShiftTime(shift.endTime))}</span></div>
+        <div class="scheduledShiftWho"><strong>${escapeHtml(technician)}${isMine ? ' <span class="youMarker">YOU</span>' : ""}</strong><small>@${escapeHtml(shift.technicianUsername || "unassigned")}${shift.notes ? ` · ${escapeHtml(shift.notes)}` : ""}</small></div>
+        <span class="shiftStatus ${status}">${statusLabel}</span>
+        ${isAdmin() ? `<button type="button" class="btn small danger" data-delete-scheduled-shift="${escapeHtml(shift.id)}">Remove</button>` : ""}
       </article>`;
     }).join("");
     updateIncomingScheduleHint(false);
+    renderOperationsBoard();
   }
 
   async function addScheduledShift(event) {
@@ -946,6 +1064,7 @@
     if (!shift) return;
     if (!window.confirm(`Remove ${shift.technicianDisplayName || shift.technicianUsername}'s scheduled shift on ${shift.date} (${shift.startTime}–${shift.endTime})?`)) return;
     state.shiftSchedule = state.shiftSchedule.filter((entry) => entry.id !== id);
+    if (state.shiftChecks) delete state.shiftChecks[id];
     renderTimeSheet();
     if (await saveState({ immediate: true })) showToast("Scheduled shift removed.");
   }
@@ -1065,7 +1184,10 @@
       field.addEventListener(eventName, () => {
         state[targetObjectName][stateKey] = field.value;
         saveState();
-        if (targetObjectName === "event") updateEventSummary();
+        if (targetObjectName === "event") {
+          updateEventSummary();
+          renderOperationsBoard();
+        }
         if (targetObjectName === "shiftDraft") {
           $("handoffDraftState").textContent = "Draft autosaved";
           $("handoffDraftState").className = "pill";
@@ -1169,6 +1291,7 @@
     $("handoffHistory").innerHTML = entries.length
       ? entries.map(renderHandoffCard).join("")
       : `<div class="empty"><strong>No handoffs saved yet</strong>Save a handoff above to start a running shift history for this event.</div>`;
+    renderOperationsBoard();
   }
 
   async function loadHandoffIntoDraft(id) {
@@ -1213,43 +1336,146 @@
   }
 
   // ===========================================================================
+  // STAGE-MANAGEMENT OPERATIONS BOARD
+  // ===========================================================================
+  function formatBoardDateTime(date, time) {
+    if (!date || !time) return "Time not set";
+    const stamp = new Date(`${date}T${time}:00`);
+    if (Number.isNaN(stamp.getTime())) return `${date} ${time}`;
+    const day = stamp.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+    return `${day} · ${stamp.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+  }
+
+  function renderOperationsBoard(refreshRelated = true) {
+    if (!$("view-operations")) return;
+    const eventName = String(state.event?.name || "").trim();
+    const now = Date.now();
+    const shifts = getSortedShifts();
+    const currentShifts = shifts.filter((shift) => getShiftStatus(shift, now) === "on-duty");
+    const nextShift = shifts.find((shift) => parseShiftDateTime(shift.date, shift.startTime) > now);
+    const myShift = getCurrentOrNextShiftForUser();
+    const progress = getChecklistProgress(myShift);
+    const percentage = progress.total ? Math.round(progress.completed / progress.total * 100) : 0;
+    const open = [...state.incidents].filter((incident) => !incident.resolved).sort((a, b) => (b.created || 0) - (a.created || 0));
+    const urgentValues = (state.settings?.incidentPriorities || []).slice(-2);
+    const urgentCount = open.filter((incident) => urgentValues.includes(incident.priority || incident.severity) || ["High", "Urgent"].includes(incident.priority || incident.severity)).length;
+    const today = localDateString();
+
+    $("boardEventName").textContent = eventName || "No event assigned";
+    $("boardEventMeta").textContent = eventName
+      ? [state.event.date ? formatShiftDate(state.event.date) : "Date not set", state.event.spaces, state.event.lead ? `Lead: ${state.event.lead}` : ""].filter(Boolean).join(" · ")
+      : "Ask an administrator to assign the active rental and set the crew call sheet.";
+    $("boardEventPhase").textContent = eventName ? (state.event.status || "Phase not set") : "Awaiting event";
+    $("boardMyShiftStatus").textContent = myShift ? (getShiftStatus(myShift, now) === "on-duty" ? "On duty" : "Next assigned shift") : "No shift assigned";
+    $("boardMyShiftStatus").className = `pill ${myShift ? "green" : "amber"}`;
+    $("boardUpdatedAt").textContent = state.updated ? `Host record updated ${new Date(state.updated).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Host record initialized";
+    $("metricOnDuty").textContent = String(currentShifts.length);
+    $("metricOnDutyNote").textContent = currentShifts.length ? currentShifts.map((shift) => shift.technicianDisplayName || shift.technicianUsername).join(", ") : "No one scheduled right now";
+    $("metricNextOnDeck").textContent = nextShift ? (nextShift.technicianDisplayName || nextShift.technicianUsername || "Assigned technician") : "—";
+    $("metricNextTime").textContent = nextShift ? formatBoardDateTime(nextShift.date, nextShift.startTime) : "No future shift scheduled";
+    $("metricOpenIncidents").textContent = String(open.length);
+    $("metricUrgentIncidents").textContent = urgentCount ? `${urgentCount} high / urgent require follow-up` : "No high-priority open items";
+    $("metricChecklistProgress").textContent = `${percentage}%`;
+    $("metricChecklistNote").textContent = myShift ? `${progress.completed} of ${progress.total} tasks for your shift` : "Waiting for a shift assignment";
+
+    const visibleCrew = shifts.filter((shift) => {
+      const end = parseShiftDateTime(shift.date, shift.endTime);
+      const start = parseShiftDateTime(shift.date, shift.startTime);
+      return (end >= now || start >= now) && start <= now + 7 * 24 * 60 * 60 * 1000;
+    }).slice(0, 6);
+    const crewList = $("boardCrewList");
+    crewList.innerHTML = visibleCrew.length ? visibleCrew.map((shift) => {
+      const status = getShiftStatus(shift, now);
+      const isMine = normalizeUsername(shift.technicianUsername) === normalizeUsername(activeUser?.username);
+      return `<div class="boardCrewRow ${status === "on-duty" ? "isOnDuty" : ""}">
+        <div class="boardCrewTime"><strong>${escapeHtml(formatShiftTime(shift.startTime))}</strong><small>${escapeHtml(shift.date === today ? "Today" : formatShiftDate(shift.date))}</small></div>
+        <div class="boardCrewInfo"><strong>${escapeHtml(shift.technicianDisplayName || shift.technicianUsername || "Unassigned")}${isMine ? ' <span class="youMarker">YOU</span>' : ""}</strong><small>${escapeHtml(shift.notes || "General coverage")}</small></div>
+        <span class="shiftStatus ${status}">${status === "on-duty" ? "ON DUTY" : status === "upcoming" ? "UP NEXT" : "DONE"}</span>
+      </div>`;
+    }).join("") : '<div class="empty"><strong>No upcoming crew shifts</strong>The administrator timesheet will appear here when coverage is assigned.</div>';
+
+    const myShiftNode = $("boardMyShift");
+    if (!myShift) {
+      myShiftNode.innerHTML = `<div class="boardEmpty"><div class="boardEmptyIcon">◷</div><div><strong>No shift assigned to ${escapeHtml(activeUser?.displayName || "this account")}</strong><p>Ask an administrator to add you to the timesheet. Your check-in checklist opens automatically when you have an assigned shift.</p></div></div>`;
+      $("boardMyShiftSub").textContent = "Your assignment and arrival checklist";
+    } else {
+      const status = getShiftStatus(myShift, now);
+      myShiftNode.innerHTML = `<div class="myShiftCall"><span class="overline">${status === "on-duty" ? "CURRENT SHIFT" : "NEXT ASSIGNMENT"}</span><strong>${escapeHtml(formatShiftDate(myShift.date))}</strong><div class="myShiftTime">${escapeHtml(formatShiftTime(myShift.startTime))}–${escapeHtml(formatShiftTime(myShift.endTime))}</div><p>${escapeHtml(myShift.notes || "General technician coverage")}</p><div class="myShiftProgress"><div><span>Shift checklist</span><b>${progress.completed}/${progress.total}</b></div><div class="progress"><span style="width:${percentage}%"></span></div></div><button type="button" class="btn primary" data-view="checklist">Continue checklist ↗</button></div>`;
+      $("boardMyShiftSub").textContent = `${status === "on-duty" ? "Currently assigned" : "Next scheduled"} · checklist progress is shift-specific`;
+    }
+
+    $("boardIncidentList").innerHTML = open.length ? open.slice(0, 4).map((incident) => `<button type="button" class="boardCompactItem" data-view="incidents"><span class="priorityMark ${priorityClass(incident.priority || incident.severity)}"></span><span class="boardCompactCopy"><strong>${escapeHtml(incident.title || "Untitled incident")}</strong><small>${escapeHtml(incident.category || "Other")} · ${escapeHtml(incident.location || "Location not set")} · ${escapeHtml(incident.createdBy?.displayName || incident.reportedBy || "Technician")}</small></span><span class="incidentPriority ${priorityClass(incident.priority || incident.severity)}">${escapeHtml(incident.priority || incident.severity || "Medium")}</span></button>`).join("") : '<div class="empty"><strong>No open incidents</strong>New technical issues and hazards will appear here.</div>';
+
+    const latestHandoffs = [...state.handoffs].sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0)).slice(0, 4);
+    $("boardHandoffList").innerHTML = latestHandoffs.length ? latestHandoffs.map((entry) => `<button type="button" class="boardCompactItem" data-view="handoff"><span class="handoffStamp">⇄</span><span class="boardCompactCopy"><strong>${escapeHtml(entry.outgoing || entry.createdBy?.displayName || "Technician")} <span aria-hidden="true">→</span> ${escapeHtml(entry.incoming || "Next shift unassigned")}</strong><small>${escapeHtml(formatDateTime(entry.savedAt))} · ${escapeHtml(entry.summary || "No status summary")}</small></span><span class="incidentPriority ${priorityClass(entry.priority)}">${escapeHtml(entry.priority || "Routine")}</span></button>`).join("") : '<div class="empty"><strong>No handoffs yet</strong>Saved shift changes will be listed here.</div>';
+
+    if (refreshRelated) {
+      // Metrics share these renderers; they are deliberately kept in one place
+      // so a save, incident resolution, or timesheet edit updates the dashboard.
+      if ($("scheduleNextWho")) $("scheduleNextWho").textContent = nextShift?.technicianDisplayName || "—";
+    }
+  }
+
+  // ===========================================================================
   // TECHNICIAN CHECKLIST
   // ===========================================================================
-  function getChecklistProgress() {
+  function getChecklistProgress(shift = getCurrentOrNextShiftForUser()) {
     let total = 0;
     let completed = 0;
+    const checks = getChecksForShift(shift);
     getChecklistSections().forEach((section) => section.items.forEach((item) => {
       total += 1;
-      if (state.checks[item.id]) completed += 1;
+      if (checks[item.id]) completed += 1;
     }));
     return { total, completed };
   }
 
   function renderChecklist() {
+    const shift = getCurrentOrNextShiftForUser();
+    const checks = getChecksForShift(shift);
+    const hasEvent = Boolean(String(state.event?.name || "").trim());
+    const canCheck = Boolean(shift && hasEvent);
+    const context = $("checklistShiftContext");
+    if (context) {
+      if (!hasEvent) {
+        context.innerHTML = '<strong>Waiting for event assignment</strong><span>An administrator must set the current event before shift work can be recorded.</span>';
+        context.className = "checklistContext warning";
+      } else if (!shift) {
+        context.innerHTML = '<strong>No shift assigned to your account</strong><span>Ask an administrator to add you to the crew schedule. Your checklist progress is tracked separately for each assigned shift.</span>';
+        context.className = "checklistContext warning";
+      } else {
+        const status = getShiftStatus(shift);
+        context.innerHTML = `<strong>${status === "on-duty" ? "You are on the clock" : "Your next scheduled shift"} · ${escapeHtml(formatShiftDate(shift.date))}</strong><span>${escapeHtml(formatShiftTime(shift.startTime))}–${escapeHtml(formatShiftTime(shift.endTime))} · ${escapeHtml(shift.notes || "General technician call")} · Tasks are defined by an administrator and saved for this shift only.</span>`;
+        context.className = "checklistContext";
+      }
+    }
+
     $("checklistGrid").innerHTML = getChecklistSections().map((section) => {
-      const completed = section.items.filter((item) => state.checks[item.id]).length;
+      const completed = section.items.filter((item) => checks[item.id]).length;
       const percent = section.items.length ? (completed / section.items.length) * 100 : 0;
       const items = section.items.map((item) => `
-        <label class="checkitem ${state.checks[item.id] ? "done" : ""}">
-          <input type="checkbox" data-check="${escapeHtml(item.id)}" ${state.checks[item.id] ? "checked" : ""}>
+        <label class="checkitem ${checks[item.id] ? "done" : ""} ${canCheck ? "" : "checkDisabled"}">
+          <input type="checkbox" data-check="${escapeHtml(item.id)}" ${shift ? `data-shift-id="${escapeHtml(shift.id)}"` : ""} ${checks[item.id] ? "checked" : ""} ${canCheck ? "" : "disabled"}>
           <span><b>${escapeHtml(item.label)}</b><small>${escapeHtml(item.help)}</small></span>
         </label>
       `).join("");
-
       return `
         <article class="card checkCard">
           <div class="checkHeader"><div><h3>${escapeHtml(section.title)}</h3><div class="checkDesc">${escapeHtml(section.description)}</div></div><span class="count">${completed} / ${section.items.length}</span></div>
           <div class="progress"><span style="width:${percent}%"></span></div>
-          ${items}
+          ${items || '<div class="empty">No checklist tasks in this section.</div>'}
         </article>
       `;
     }).join("");
 
-    const progress = getChecklistProgress();
+    const progress = getChecklistProgress(shift);
     const percent = progress.total ? progress.completed / progress.total * 100 : 0;
     $("overallProgress").textContent = `${progress.completed} / ${progress.total}`;
     $("overallProgressBar").style.width = `${percent}%`;
     $("checkNavCount").textContent = `${Math.round(percent)}%`;
+    if ($("metricChecklistProgress")) $("metricChecklistProgress").textContent = `${Math.round(percent)}%`;
+    if ($("metricChecklistNote")) $("metricChecklistNote").textContent = shift ? `${progress.completed} of ${progress.total} tasks complete for your shift` : "Waiting for admin schedule assignment";
+    renderOperationsBoard(false);
   }
 
   // ===========================================================================
@@ -1603,6 +1829,7 @@
     $("incidentList").innerHTML = filtered.length
       ? filtered.map(renderIncidentCard).join("")
       : `<div class="empty"><strong>No matching incidents</strong>Log an incident or change the search / filters.</div>`;
+    renderOperationsBoard();
   }
 
   async function toggleIncidentResolved(id) {
@@ -1644,8 +1871,11 @@
   function switchView(viewName) {
     if (viewName === "settings" && !isAdmin()) {
       if (activeUser) showToast("Administrator access is required for workspace settings.");
-      viewName = "handoff";
+      viewName = "operations";
     }
+    const knownViews = new Set(["operations", "schedule", "handoff", "checklist", "incidents", "settings"]);
+    if (!knownViews.has(viewName)) viewName = "operations";
+    activeView = viewName;
     document.querySelectorAll(".view").forEach((view) => view.classList.toggle("active", view.id === `view-${viewName}`));
     document.querySelectorAll("[data-view]").forEach((button) => {
       const active = button.dataset.view === viewName;
@@ -1653,20 +1883,20 @@
       if (active) button.setAttribute("aria-current", "page");
       else button.removeAttribute("aria-current");
     });
-    // Keep the main workflow compact: event details are expanded on handoff and
-    // folded away on the checklist, incident, and settings views. They remain
-    // available from the persistent event card header at all times.
-    setEventDetailsExpanded(viewName === "handoff");
-
+    setEventDetailsExpanded(viewName === "handoff" || (viewName === "settings" && isAdmin()));
     const pageInfo = {
-      handoff: { crumb: "RENTAL OPERATIONS / SHIFT HANDOFF", title: "Shift handoff", sub: "Leave the next technician a clear picture of the event, outstanding work, and anything that needs attention." },
-      checklist: { crumb: "RENTAL OPERATIONS / TECH CHECKLIST", title: "Technician checklist", sub: "Take over, support the event, and close out your shift without leaving gaps." },
-      incidents: { crumb: "RENTAL OPERATIONS / INCIDENT LOG", title: "Incident log", sub: "Track technical issues, hazards, immediate actions, and open follow-up work." },
-      settings: { crumb: "WORKSPACE / SETTINGS & ADMIN", title: "Settings & administration", sub: "Manage the technician workflow, checklist, incident choices, and user accounts." },
-    }[viewName] || { crumb: "RENTAL OPERATIONS", title: "Backstage", sub: "Technician tools for event rentals." };
+      operations: { crumb: "STAGE MANAGEMENT / OPERATIONS BOARD", title: "Operations board", sub: "See who's on duty, who's next, and what needs attention across the event." },
+      schedule: { crumb: "STAGE MANAGEMENT / CREW SCHEDULE", title: "Crew schedule", sub: "One shared call sheet for the full event. Administrators assign coverage; everyone can see the run of shifts." },
+      handoff: { crumb: "STAGE MANAGEMENT / SHIFT HANDOFF", title: "Shift handoff", sub: "Leave the incoming technician the current situation, completed work, open tasks, and next priorities." },
+      checklist: { crumb: "STAGE MANAGEMENT / SHIFT CHECKLIST", title: "Shift checklist", sub: "Complete the admin-defined tasks for your scheduled shift. Progress is recorded separately per shift." },
+      incidents: { crumb: "STAGE MANAGEMENT / INCIDENT REGISTER", title: "Incident register", sub: "Log problems with clear ownership, action taken, priority, and resolution status." },
+      settings: { crumb: "STAGE MANAGEMENT / ADMINISTRATION", title: "Settings & administration", sub: "Manage technician accounts, the standard checklist, event phases, categories, and priorities." },
+    }[viewName];
     $("breadcrumb").textContent = pageInfo.crumb;
     $("pageTitle").textContent = pageInfo.title;
     $("pageSub").textContent = pageInfo.sub;
+    if (viewName === "operations") renderOperationsBoard();
+    if (viewName === "schedule") renderTimeSheet();
   }
 
   async function startNewEvent() {
@@ -1746,6 +1976,12 @@
     const nav = event.target.closest("[data-view]");
     if (nav) switchView(nav.dataset.view);
 
+    const deleteShiftButton = event.target.closest("[data-delete-scheduled-shift]");
+    if (deleteShiftButton) {
+      if (!isAdmin()) return showToast("Only administrators can edit the crew schedule.");
+      await removeScheduledShift(deleteShiftButton.dataset.deleteScheduledShift);
+    }
+
     const loadButton = event.target.closest("[data-load-handoff]");
     if (loadButton) loadHandoffIntoDraft(loadButton.dataset.loadHandoff);
 
@@ -1785,8 +2021,43 @@
     renderChecklist();
     renderHandoffs();
     renderIncidents();
+    renderOperationsBoard();
     $("lastSaved").textContent = state.updated ? new Date(state.updated).toLocaleString() : "Not saved yet";
     $("recordId").textContent = (state.eventId || "NEW").slice(0, 8).toUpperCase();
+  }
+
+  async function refreshSharedRecord() {
+    if (!serverStorageEnabled) {
+      showToast("The shared host is unavailable. Sign in again after the API is restored.");
+      return;
+    }
+    if (!window.confirm("Refresh the shared event, crew schedule, checklist, handoffs, and incidents from the host? Any unsaved form text in this tab will be replaced.")) return;
+    const button = $("refreshSharedBtn");
+    if (button) { button.disabled = true; button.textContent = "Refreshing…"; }
+    try {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      const response = await hostRequest("/api/state", { method: "GET" });
+      const saved = await response.json();
+      const headerRevision = parseInt(String(response.headers.get("ETag") || "").replace(/[^0-9]/g, ""), 10);
+      serverRevision = Number.isSafeInteger(headerRevision) && headerRevision >= 0 ? headerRevision : (Number(saved?.revision) || 0);
+      state = saved ? normalizeState(saved) : createBlankState();
+      state.revision = serverRevision;
+      state.shiftDraft = createBlankState().shiftDraft;
+      state.shiftDraft.priority = state.settings.handoffPriorities[0] || "Routine";
+      fillEventFields();
+      fillHandoffDraft();
+      if (activeUser && $("outgoingTech")) $("outgoingTech").value = activeUser.displayName;
+      if (activeUser && $("incidentReportedBy")) $("incidentReportedBy").value = activeUser.displayName;
+      renderApp();
+      updateSessionIdentity();
+      if (isAdmin()) await refreshAdminUsers();
+      showToast("Shared host record refreshed. Schedule, incidents, handoffs, and shift checklist are current.");
+    } catch (error) {
+      showToast(error.message || "Could not refresh the shared record. Check the host connection.");
+    } finally {
+      if (button) { button.disabled = false; button.textContent = "↻ Refresh shared record"; }
+    }
   }
 
   async function logoutFromBackstage() {
@@ -1806,27 +2077,42 @@
     saveTimer = null;
     if (serverStorageEnabled && token) {
       try {
-        await Promise.race([saveQueue.catch(() => undefined), new Promise((resolve) => setTimeout(resolve, 1500))]);
-        state.updated = Date.now();
-        const snapshot = JSON.stringify(state);
+        // Flush pending autosaves before the final write. Unlike hostRequest(),
+        // logout must not open another interactive login if a session was revoked.
+        clearTimeout(saveTimer);
+        saveTimer = null;
         const endpoint = window.BACKSTAGE_STATIC_SITE ? `${FIXED_API_BASE_URL}/api/state` : apiUrl("/api/state");
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-        try {
-          const response = await fetch(endpoint, {
-            method: "PUT", cache: "no-store", signal: controller.signal,
-            headers: { "Content-Type": "application/json", "X-Theatre-Session": token },
-            body: snapshot,
-          });
-          if (!response.ok) throw new Error(`The host returned ${response.status}.`);
-        } finally { clearTimeout(timeoutId); }
+        const finalSnapshot = JSON.parse(JSON.stringify(state));
+        finalSnapshot.updated = Date.now();
+        const finalSave = saveQueue.catch(() => undefined).then(async () => {
+          finalSnapshot.revision = serverRevision;
+          const response = await fetchWithTimeout(endpoint, {
+            method: "PUT", cache: "no-store",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Theatre-Session": token,
+              "If-Match": `"${serverRevision}"`,
+            },
+            body: JSON.stringify(finalSnapshot),
+          }, 8000);
+          if (!response.ok) {
+            let detail = "";
+            try { detail = (await response.json()).error || ""; } catch (_) { /* generic fallback */ }
+            throw new Error(detail || `The host returned ${response.status}.`);
+          }
+          const etagRevision = parseInt(String(response.headers.get("ETag") || "").replace(/[^0-9]/g, ""), 10);
+          if (Number.isSafeInteger(etagRevision) && etagRevision >= 0) serverRevision = etagRevision;
+          state.revision = serverRevision;
+        });
+        saveQueue = finalSave;
+        await finalSave;
       } catch (error) {
         console.warn("Could not confirm the final save during logout.", error);
         warning = "Signed out, but the host could not confirm the latest save. Sign in again and verify the event record.";
       }
       try {
         const endpoint = window.BACKSTAGE_STATIC_SITE ? `${FIXED_API_BASE_URL}/api/logout` : apiUrl("/api/logout");
-        await fetch(endpoint, { method: "POST", cache: "no-store", headers: { "X-Theatre-Session": token } });
+        await fetchWithTimeout(endpoint, { method: "POST", cache: "no-store", headers: { "X-Theatre-Session": token } }, 5000);
       } catch (_) { /* clear browser credentials even if logout endpoint is unavailable */ }
     }
 
@@ -1967,8 +2253,10 @@
     bindAutoSaveFields(eventFieldMap, "event");
     bindAutoSaveFields(handoffFieldMap, "shiftDraft");
 
-    // Timesheet form submission and shift deletion are handled by the Settings
-    // view's delegated submit/click handlers to avoid duplicate actions.
+    // Crew schedule is visible to everyone; only its edit form is admin-visible.
+    $("timeSheetForm")?.addEventListener("submit", addScheduledShift);
+    $("scheduleRangeFilter")?.addEventListener("change", renderTimeSheet);
+    $("scheduleSearch")?.addEventListener("input", renderTimeSheet);
     $("incomingTech")?.addEventListener("change", () => {
       state.shiftDraft.incoming = normalizeTechnicianSelection($("incomingTech").value);
       updateIncomingScheduleHint(false);
@@ -1992,22 +2280,33 @@
     $("checklistGrid").addEventListener("change", async (event) => {
       const checkbox = event.target.closest("[data-check]");
       if (!checkbox) return;
-      if (!String(state.event?.name || "").trim()) {
-        checkbox.checked = Boolean(state.checks[checkbox.dataset.check]);
-        showToast("An administrator must assign the active event before technicians can update its checklist.");
+      const shift = getCurrentOrNextShiftForUser();
+      if (!String(state.event?.name || "").trim() || !shift || checkbox.dataset.shiftId !== shift.id) {
+        renderChecklist();
+        showToast(!String(state.event?.name || "").trim()
+          ? "An administrator must assign the active event before this checklist can be used."
+          : "No shift is assigned to your account. Ask an administrator to add you to the crew schedule.");
         return;
       }
-      state.checks[checkbox.dataset.check] = checkbox.checked;
+      if (!state.shiftChecks || typeof state.shiftChecks !== "object") state.shiftChecks = {};
+      if (!state.shiftChecks[shift.id] || typeof state.shiftChecks[shift.id] !== "object") state.shiftChecks[shift.id] = {};
+      const previousValue = Boolean(state.shiftChecks[shift.id][checkbox.dataset.check]);
+      state.shiftChecks[shift.id][checkbox.dataset.check] = checkbox.checked;
       renderChecklist();
-      if (await saveState({ immediate: true })) showToast(checkbox.checked ? "Checklist item saved." : "Checklist item unchecked and saved.");
+      if (await saveState({ immediate: true })) showToast(checkbox.checked ? "Shift checklist item saved." : "Shift checklist item unchecked and saved.");
+      else {
+        state.shiftChecks[shift.id][checkbox.dataset.check] = previousValue;
+        renderChecklist();
+      }
     });
 
     $("resetChecksBtn").addEventListener("click", async () => {
       if (!isAdmin()) return showToast("Only administrators can reset all checklist progress at once.");
       if (!window.confirm("Reset all technician checklist checks for this event? Handoff and incident history will remain.")) return;
       state.checks = {};
+      state.shiftChecks = {};
       renderChecklist();
-      if (await saveState({ immediate: true })) showToast("Technician checklist reset on the shared host.");
+      if (await saveState({ immediate: true })) showToast("All shift checklist progress reset on the shared host.");
     });
 
     $("incidentForm").addEventListener("submit", addIncident);
@@ -2022,6 +2321,7 @@
     document.addEventListener("click", handleDocumentClick);
 
     $("newEventBtn").addEventListener("click", startNewEvent);
+    $("refreshSharedBtn")?.addEventListener("click", refreshSharedRecord);
     $("logoutBtn")?.addEventListener("click", logoutFromBackstage);
     $("toggleEventDetailsBtn")?.addEventListener("click", () => {
       const expanded = $("toggleEventDetailsBtn").getAttribute("aria-expanded") !== "true";
@@ -2097,6 +2397,11 @@
       try {
         state = await loadInitialState();
         if (!serverStorageEnabled) throw new Error("The required shared host did not connect.");
+        // Older releases stored one shared unsaved draft, which let one tech's
+        // typing overwrite another's. Drafts are now per-tab until Save handoff.
+        state.shiftDraft = createBlankState().shiftDraft;
+        state.shiftDraft.priority = state.settings.handoffPriorities[0] || "Routine";
+        state.revision = serverRevision;
         break;
       } catch (error) {
         clearAccountSession();
@@ -2127,6 +2432,7 @@
     setupEventListeners();
     setupAccountManagement();
     renderApp();
+    switchView("operations");
     updateSessionIdentity();
 
     if (activeUser?.role === "admin") await refreshAdminUsers();
@@ -2138,6 +2444,14 @@
     if (isPublishedSite && serverStorageEnabled) document.body.classList.remove("authPending");
     renderApiConnectionPanel();
   }
+
+  // The call sheet is time-sensitive even when nobody edits the record. Refresh
+  // status labels locally each minute without overwriting shared data or drafts.
+  window.setInterval(() => {
+    if (!activeUser || !serverStorageEnabled || document.body.classList.contains("authPending")) return;
+    if (activeView === "operations") renderOperationsBoard();
+    else if (activeView === "schedule") renderTimeSheet();
+  }, 60000);
 
   window.addEventListener("pageshow", (event) => {
     if (!window.BACKSTAGE_STATIC_SITE || !event.persisted) return;

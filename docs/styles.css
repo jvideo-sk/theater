@@ -704,3 +704,118 @@ body.authPending .skipLink { display: none; }
   .scheduledShiftWhen, .scheduledShiftWho { grid-column: 1 / -1; }
   .scheduledShiftRow .btn { grid-column: 2; grid-row: 1; }
 }
+
+/* ========================================================================== */
+/* Stage-management workspace: operations board, call sheet, shift checklists. */
+/* ========================================================================== */
+.operationsWelcome { display:flex; justify-content:space-between; align-items:flex-end; gap:14px; margin:4px 0 16px; }
+.operationsWelcome h2 { margin:3px 0 2px; font-size:clamp(22px,2.5vw,30px); letter-spacing:-.035em; }
+.operationsWelcome p:not(.eyebrow) { margin:0; color:var(--muted); font-size:12px; }
+.operationsTimestamp { display:flex; gap:8px; align-items:center; color:var(--dim); font-size:11px; text-align:right; }
+.liveIndicator { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--green); box-shadow:0 0 0 4px rgb(117 223 178 / 11%); }
+.boardHero { display:flex; align-items:center; justify-content:space-between; gap:22px; margin-bottom:14px; padding:clamp(18px,3vw,27px); border-color:#354c64; background:radial-gradient(ellipse at 95% 2%,rgb(112 160 211 / 13%),transparent 42%),linear-gradient(135deg,#172838,#111a25 74%); }
+.boardHeroMain { min-width:0; }
+.overline { display:block; color:var(--accent); font-size:9px; font-weight:850; letter-spacing:.16em; text-transform:uppercase; margin-bottom:6px; }
+.boardHero h2 { margin:0; font-size:clamp(22px,3vw,31px); letter-spacing:-.035em; overflow-wrap:anywhere; }
+.boardHero p { margin:6px 0 12px; color:var(--muted); font-size:12px; }
+.boardHeroBadges { display:flex; gap:7px; flex-wrap:wrap; }
+.boardHeroActions { display:flex; flex:0 0 auto; flex-direction:column; gap:8px; min-width:165px; }
+.opsMetrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:11px; margin-bottom:14px; }
+.opsMetric { min-width:0; border:1px solid var(--line); border-radius:12px; padding:15px; background:linear-gradient(145deg,#162230,#111923); }
+.opsMetric > span { display:block; font-size:10px; color:var(--muted); font-weight:750; text-transform:uppercase; letter-spacing:.06em; }
+.opsMetric strong { display:block; margin-top:9px; font-size:clamp(19px,2.2vw,25px); line-height:1.15; letter-spacing:-.025em; overflow-wrap:anywhere; }
+.opsMetric small { display:block; margin-top:6px; color:var(--dim); font-size:10px; line-height:1.45; }
+.operationsGrid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; align-items:start; }
+.boardPanel { padding:16px; min-width:0; }
+.boardPanelHead { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.boardPanelHead h3 { margin:0; font-size:14px; }
+.boardPanelHead p { margin:4px 0 0; font-size:10px; color:var(--muted); }
+.textButton { border:0; background:transparent; padding:3px 0; color:var(--accent); font-size:11px; font-weight:800; white-space:nowrap; }
+.textButton:hover { color:#fff; text-decoration:underline; }
+.boardCrewList,.boardCompactList { display:grid; gap:0; }
+.boardCrewRow { display:grid; grid-template-columns:88px minmax(0,1fr) auto; gap:11px; align-items:center; padding:11px 0; border-top:1px solid #293848; }
+.boardCrewRow:first-child { border-top:0; }
+.boardCrewRow.isOnDuty { margin:0 -7px; padding:11px 7px; border-radius:8px; background:rgb(117 223 178 / 5%); }
+.boardCrewTime strong,.boardCrewInfo strong { display:block; font-size:11px; }
+.boardCrewTime small,.boardCrewInfo small { display:block; margin-top:2px; color:var(--muted); font-size:10px; line-height:1.4; }
+.boardCrewInfo { min-width:0; }
+.boardCrewInfo strong { overflow-wrap:anywhere; }
+.shiftStatus { display:inline-flex; align-items:center; justify-content:center; padding:4px 6px; border-radius:5px; border:1px solid var(--line); color:var(--muted); font-size:8px; font-weight:850; letter-spacing:.05em; white-space:nowrap; }
+.shiftStatus.on-duty { color:var(--green); border-color:#2c684f; background:#132a22; }
+.shiftStatus.upcoming { color:var(--accent); border-color:#3a597b; background:#162a3d; }
+.shiftStatus.completed { color:var(--dim); background:#121923; }
+.youMarker { display:inline-flex; vertical-align:middle; border-radius:4px; padding:2px 4px; margin-left:4px; color:var(--accent); background:#20364e; font-size:8px; font-weight:900; letter-spacing:.07em; }
+.boardEmpty { display:flex; align-items:flex-start; gap:12px; padding:10px 0; }
+.boardEmptyIcon { display:grid; place-items:center; width:38px; height:38px; flex:none; border:1px solid var(--line); border-radius:10px; color:var(--accent); background:#142130; font-size:21px; }
+.boardEmpty strong { display:block; font-size:12px; }
+.boardEmpty p { margin:5px 0 0; color:var(--muted); font-size:11px; }
+.myShiftCall { display:grid; gap:3px; }
+.myShiftCall > strong { font-size:15px; }
+.myShiftTime { font-size:20px; line-height:1.2; font-weight:850; letter-spacing:-.02em; }
+.myShiftCall p { margin:4px 0 10px; color:var(--muted); font-size:11px; }
+.myShiftProgress { margin:7px 0 11px; }
+.myShiftProgress > div:first-child { display:flex; justify-content:space-between; gap:8px; color:var(--muted); font-size:10px; }
+.myShiftProgress b { color:var(--text); }
+.myShiftProgress .progress { margin:7px 0 0; }
+.boardCompactItem { display:flex; align-items:center; gap:10px; width:100%; border:0; border-top:1px solid #293848; padding:11px 0; text-align:left; color:var(--text); background:transparent; }
+.boardCompactItem:first-child { border-top:0; }
+.boardCompactItem:hover .boardCompactCopy strong { color:var(--accent); }
+.boardCompactCopy { display:grid; gap:3px; flex:1; min-width:0; }
+.boardCompactCopy strong { font-size:11px; line-height:1.4; overflow-wrap:anywhere; }
+.boardCompactCopy small { color:var(--muted); font-size:10px; line-height:1.4; overflow-wrap:anywhere; }
+.priorityMark { width:8px; height:8px; flex:none; border-radius:50%; background:var(--dim); }
+.priorityMark.red { background:var(--red); box-shadow:0 0 0 3px rgb(255 123 133 / 9%); }
+.priorityMark.amber { background:var(--amber); }
+.handoffStamp { width:26px; height:26px; flex:none; display:grid; place-items:center; border:1px solid var(--line); border-radius:8px; color:var(--accent); background:#142130; }
+.incidentPriority { display:inline-flex; padding:3px 5px; border:1px solid var(--line); border-radius:5px; color:var(--muted); font-size:8px; font-weight:850; text-transform:uppercase; white-space:nowrap; }
+.incidentPriority.red { color:var(--red); border-color:#733943; background:#2b171d; }
+.incidentPriority.amber { color:var(--amber); border-color:#70572f; background:#272116; }
+.scheduleAdminEditor { padding:14px; border:1px solid #2e465d; border-radius:11px; background:rgb(20 36 51 / 65%); }
+.scheduleAdminEditor[hidden] { display:none !important; }
+.scheduleFilters { display:flex; align-items:flex-end; gap:12px; margin-top:17px; }
+.scheduleFilter { display:block; flex:0 0 210px; min-width:0; }
+.scheduleFilter .label { margin-bottom:5px; }
+.scheduleSearch { flex:1 1 260px; }
+.scheduledShiftRow { grid-template-columns:minmax(145px,.85fr) minmax(170px,1.2fr) auto auto; }
+.scheduledShiftRow.shiftCurrent { border-color:#2e7659; background:linear-gradient(90deg,rgb(36 100 73 / 15%),#111a24); }
+.scheduledShiftRow.shiftMine { box-shadow:inset 3px 0 0 var(--accent); }
+.scheduledShiftWho { min-width:0; }
+.scheduledShiftWho strong,.scheduledShiftWho small { overflow-wrap:anywhere; }
+.scheduledShiftRow > .shiftStatus { justify-self:start; }
+.checklistContext { display:grid; gap:3px; margin:0 0 14px; padding:13px 15px; border:1px solid #315540; border-radius:11px; background:#13251f; }
+.checklistContext strong { color:var(--green); font-size:12px; }
+.checklistContext span { color:var(--muted); font-size:11px; }
+.checklistContext.warning { border-color:#6e562e; background:#282215; }
+.checklistContext.warning strong { color:var(--amber); }
+.checkDisabled { opacity:.58; }
+@media (max-width:1200px) {
+  .opsMetrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .boardCrewRow { grid-template-columns:78px minmax(0,1fr); }
+  .boardCrewRow .shiftStatus { grid-column:2; justify-self:start; }
+  .scheduledShiftRow { grid-template-columns:minmax(130px,.8fr) minmax(130px,1fr) auto; }
+  .scheduledShiftRow > .shiftStatus { grid-column:3; }
+}
+@media (max-width:800px) {
+  .boardHero { align-items:stretch; flex-direction:column; }
+  .boardHeroActions { flex-direction:row; flex-wrap:wrap; }
+  .boardHeroActions .btn { flex:1; }
+  .operationsGrid { grid-template-columns:1fr; }
+  .operationsWelcome { align-items:flex-start; flex-direction:column; }
+  .operationsTimestamp { text-align:left; }
+  .scheduleFilters { align-items:stretch; flex-direction:column; }
+  .scheduleFilter,.scheduleSearch { width:100%; flex:1 1 auto; }
+}
+@media (max-width:580px) {
+  .opsMetrics { grid-template-columns:1fr 1fr; gap:8px; }
+  .opsMetric { padding:12px; }
+  .opsMetric strong { font-size:20px; }
+  .boardCrewRow { grid-template-columns:72px minmax(0,1fr); gap:8px; }
+  .boardCrewTime strong { font-size:10px; }
+  .boardCrewRow .shiftStatus { grid-column:2; }
+  .scheduledShiftRow { grid-template-columns:1fr auto; gap:6px 10px; }
+  .scheduledShiftWho { grid-column:1; grid-row:2; }
+  .scheduledShiftRow > .shiftStatus { grid-column:2; grid-row:1; }
+  .scheduledShiftRow .btn { grid-column:2; grid-row:2; }
+  .scheduleSummarybar { grid-template-columns:1fr 1fr; }
+  .scheduleSummarybar .summary:last-child { grid-column:1 / -1; }
+}

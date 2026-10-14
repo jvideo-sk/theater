@@ -45,8 +45,10 @@
       <div>
         <div class="navlabel">Rental operations</div>
         <nav class="nav" aria-label="Main navigation">
-          <button type="button" class="active" data-view="handoff"><span class="navIcon" aria-hidden="true">⇄</span><span class="navText">Shift handoff</span><span class="navCount" id="handoffNavCount">0</span></button>
-          <button type="button" data-view="checklist"><span class="navIcon" aria-hidden="true">☑</span><span class="navText">Tech checklist</span><span class="navCount" id="checkNavCount">0%</span></button>
+          <button type="button" class="active" data-view="operations"><span class="navIcon" aria-hidden="true">▦</span><span class="navText">Operations board</span></button>
+          <button type="button" data-view="schedule"><span class="navIcon" aria-hidden="true">▤</span><span class="navText">Crew schedule</span><span class="navCount" id="scheduleNavCount">0</span></button>
+          <button type="button" data-view="handoff"><span class="navIcon" aria-hidden="true">⇄</span><span class="navText">Shift handoff</span><span class="navCount" id="handoffNavCount">0</span></button>
+          <button type="button" data-view="checklist"><span class="navIcon" aria-hidden="true">☑</span><span class="navText">Shift checklist</span><span class="navCount" id="checkNavCount">0%</span></button>
           <button type="button" data-view="incidents"><span class="navIcon" aria-hidden="true">⚠</span><span class="navText">Incident log</span><span class="pill amber" id="openIncidentNav">0 open</span></button>
           <button type="button" data-view="settings" data-admin-only hidden><span class="navIcon" aria-hidden="true">⚙</span><span class="navText">Settings &amp; admin</span></button>
         </nav>
@@ -91,8 +93,8 @@
 
       <div class="notice">
         <span class="nicon" aria-hidden="true">⚠</span>
-        <div><strong>Technician-to-technician handoff</strong>
-          Record the actual status, not assumptions. Keep urgent safety issues on the venue's normal radio/escalation channel; this app does not alert anyone automatically.
+        <div><strong>Operational safety note</strong>
+          Log observed facts and keep urgent safety issues on the venue's normal radio/escalation channel. Backstage records incidents; it does not dispatch emergency alerts.
         </div>
       </div>
 
@@ -121,7 +123,58 @@
         </div>
       </section>
 
-      <section class="view active" id="view-handoff">
+      <section class="view active" id="view-operations">
+        <div class="operationsWelcome">
+          <div><p class="eyebrow">STAGE MANAGEMENT · CALL SHEET</p><h2>Operations board</h2><p>Crew status, next calls, open incidents, and shift readiness.</p></div>
+          <div class="operationsTimestamp"><span class="liveIndicator"></span><span id="boardUpdatedAt">Shared host status</span><button type="button" class="btn small quiet" id="refreshSharedBtn">↻ Refresh shared record</button></div>
+        </div>
+        <section class="boardHero card">
+          <div class="boardHeroMain"><span class="overline">ACTIVE RENTAL</span><h2 id="boardEventName">No event assigned</h2><p id="boardEventMeta">Ask an administrator to assign the current event and crew schedule.</p><div class="boardHeroBadges"><span class="pill" id="boardEventPhase">Awaiting event</span><span class="pill" id="boardMyShiftStatus">No shift assigned</span></div></div>
+          <div class="boardHeroActions"><button class="btn primary" type="button" data-view="checklist">Open shift checklist ↗</button><button class="btn" type="button" data-view="handoff">Write handoff</button></div>
+        </section>
+        <div class="opsMetrics">
+          <article class="opsMetric"><span>On duty now</span><strong id="metricOnDuty">0</strong><small id="metricOnDutyNote">No current shift</small></article>
+          <article class="opsMetric"><span>Next on deck</span><strong id="metricNextOnDeck">—</strong><small id="metricNextTime">No next shift scheduled</small></article>
+          <article class="opsMetric"><span>Open incidents</span><strong id="metricOpenIncidents">0</strong><small id="metricUrgentIncidents">No urgent items</small></article>
+          <article class="opsMetric"><span>My shift checklist</span><strong id="metricChecklistProgress">0%</strong><small id="metricChecklistNote">Waiting for shift assignment</small></article>
+        </div>
+        <div class="operationsGrid">
+          <section class="card boardPanel"><div class="boardPanelHead"><div><h3>On duty &amp; up next</h3><p>Current and upcoming assigned coverage</p></div><button type="button" class="textButton" data-view="schedule">Full schedule ↗</button></div><div id="boardCrewList" class="boardCrewList"></div></section>
+          <section class="card boardPanel"><div class="boardPanelHead"><div><h3>My shift</h3><p id="boardMyShiftSub">Your assignment and arrival checklist</p></div><button type="button" class="textButton" data-view="checklist">Checklist ↗</button></div><div id="boardMyShift" class="boardMyShift"></div></section>
+          <section class="card boardPanel"><div class="boardPanelHead"><div><h3>Open incident watch</h3><p>Items still needing attention</p></div><button type="button" class="textButton" data-view="incidents">Incident register ↗</button></div><div id="boardIncidentList" class="boardCompactList"></div></section>
+          <section class="card boardPanel"><div class="boardPanelHead"><div><h3>Recent handoffs</h3><p>Latest shift-to-shift context</p></div><button type="button" class="textButton" data-view="handoff">All handoffs ↗</button></div><div id="boardHandoffList" class="boardCompactList"></div></section>
+        </div>
+      </section>
+
+      <section class="view" id="view-schedule">
+        <div class="sectionhead"><div><h2>Crew schedule &amp; timesheet</h2><p>See assigned coverage for the whole event. Administrators own the schedule; technicians use it to know who is on now and who's next.</p></div><span class="pill" id="scheduleReadOnlyBadge">Shared schedule</span></div>
+        <div class="summarybar scheduleSummarybar">
+          <div class="summary"><span>Shifts scheduled</span><strong id="scheduleShiftTotal">0</strong></div>
+          <div class="summary"><span>Today on the call sheet</span><strong id="scheduleTodayTotal">0</strong></div>
+          <div class="summary"><span>Next on deck</span><strong id="scheduleNextWho">—</strong></div>
+        </div>
+        <section class="card timeSheetAdminPanel" id="timeSheetAdminPanel" aria-labelledby="timeSheetTitle">
+          <div class="sectionhead innerHead"><div><h2 id="timeSheetTitle">Assigned coverage</h2><p id="scheduleAccessHint">All technicians can view assignments. Only administrators can add or remove shifts.</p></div><span class="pill green" id="scheduleRoleBadge">Read-only</span></div>
+          <div class="scheduleAdminEditor" id="scheduleAdminEditor" data-admin-only hidden>
+            <form id="timeSheetForm" class="fields timeSheetForm">
+              <div class="fieldgroup"><label class="label" for="scheduleDate">Shift date *</label><input class="field" id="scheduleDate" type="date" required></div>
+              <div class="fieldgroup"><label class="label" for="scheduleStart">Start time *</label><input class="field" id="scheduleStart" type="time" required></div>
+              <div class="fieldgroup"><label class="label" for="scheduleEnd">End time *</label><input class="field" id="scheduleEnd" type="time" required></div>
+              <div class="fieldgroup"><label class="label" for="scheduleTechnician">Assigned technician *</label><select class="field" id="scheduleTechnician" required><option value="">Choose a technician</option></select></div>
+              <div class="fieldgroup wide"><label class="label" for="scheduleNotes">Assignment / post notes</label><input class="field" id="scheduleNotes" maxlength="180" placeholder="e.g. Sound desk, lobby coverage, break relief"></div>
+              <div class="fieldgroup timeSheetSubmit"><button class="btn primary" type="submit">＋ Add scheduled shift</button><span class="helpText">Overlapping shifts for the same technician are rejected. Overnight coverage should be split across two dated shifts.</span></div>
+            </form>
+          </div>
+          <div class="scheduleFilters">
+            <label class="scheduleFilter"><span class="label">Show shifts</span><select class="field" id="scheduleRangeFilter"><option value="all">All scheduled</option><option value="upcoming">Today &amp; upcoming</option><option value="today">Today only</option><option value="past">Past shifts</option></select></label>
+            <label class="scheduleFilter scheduleSearch"><span class="label">Search crew / post</span><input class="field" id="scheduleSearch" placeholder="Name, username, post notes…"></label>
+          </div>
+          <div class="timeSheetListHeader"><h3>Call sheet</h3><span class="pill" id="timeSheetCount">0 shifts</span></div>
+          <div class="timeSheetList" id="timeSheetList"><div class="empty"><strong>No shifts scheduled</strong>An administrator can assign coverage for this event.</div></div>
+        </section>
+      </section>
+
+      <section class="view" id="view-handoff">
         <div class="sectionhead"><div><h2>Write a shift handoff</h2><p>Fill out what the next technician needs to know. Saving creates a timestamped entry in the handoff history.</p></div><span class="pill" id="handoffDraftState">Draft</span></div>
         <div class="handoffGrid">
           <div class="card">
@@ -153,7 +206,8 @@
       </section>
 
       <section class="view" id="view-checklist">
-        <div class="sectionhead checklistHead"><div><h2>Technician checklist</h2><p>Use this during takeover, while supporting the event, and before leaving your shift. Check items after completing them.</p></div><button type="button" class="btn small quiet" id="resetChecksBtn" data-admin-only hidden>Reset checklist</button></div>
+        <div class="sectionhead checklistHead"><div><h2>Shift checklist</h2><p>Complete the administrator-defined tasks for the shift assigned to your account. Progress is tracked separately for every scheduled shift.</p></div><button type="button" class="btn small quiet" id="resetChecksBtn" data-admin-only hidden>Reset all progress</button></div>
+        <div class="checklistContext" id="checklistShiftContext" role="status"><strong>Loading shift assignment…</strong><span>Fetching the current event and your scheduled call.</span></div>
         <div class="checkSummary"><div><strong id="overallProgress">0 / 0</strong><span>checks complete</span></div><div class="progress"><span id="overallProgressBar"></span></div></div>
         <div class="checkgrid" id="checklistGrid"></div>
       </section>
@@ -190,7 +244,7 @@
       </section>
 
       <section class="view" id="view-settings" data-admin-only hidden>
-        <div class="sectionhead"><div><h2>Customize this desk</h2><p>Edit the checklist, event phases, incident categories, and priority choices here. Changes are shared when this browser is connected to the host.</p></div><span class="pill green">Editable in the browser</span></div>
+        <div class="sectionhead"><div><h2>Workspace administration</h2><p>Manage accounts, define the shift checklist, and maintain the dropdown choices technicians use during an event.</p></div><span class="pill green">Administrator</span></div>
         <div class="notice settingsNotice"><span class="nicon" aria-hidden="true">✎</span><div><strong>Changes are saved automatically</strong>When connected to the shared host, edits are shared with other technicians. Checklist checkmarks are kept when you rename an item. Deleting a section or task removes it from the checklist.</div></div>
 
         <div class="card apiConnectionCard">
@@ -213,19 +267,7 @@
           <div id="adminUsersList" class="adminUsersList"><div class="empty">Loading account list…</div></div>
         </section>
 
-        <section class="card timeSheetAdminPanel" id="timeSheetAdminPanel" data-admin-only hidden aria-labelledby="timeSheetTitle">
-          <div class="sectionhead innerHead"><div><h2 id="timeSheetTitle">Technician schedule / timesheet</h2><p>Administrators decide who is assigned to the active event and when. Matching assignments automatically suggest the incoming technician in a handoff.</p></div><span class="pill green">Administrator</span></div>
-          <form id="timeSheetForm" class="fields timeSheetForm">
-            <div class="fieldgroup"><label class="label" for="scheduleDate">Shift date *</label><input class="field" id="scheduleDate" type="date" required></div>
-            <div class="fieldgroup"><label class="label" for="scheduleStart">Start time *</label><input class="field" id="scheduleStart" type="time" required></div>
-            <div class="fieldgroup"><label class="label" for="scheduleEnd">End time *</label><input class="field" id="scheduleEnd" type="time" required></div>
-            <div class="fieldgroup"><label class="label" for="scheduleTechnician">Assigned technician *</label><select class="field" id="scheduleTechnician" required><option value="">Choose a technician</option></select></div>
-            <div class="fieldgroup wide"><label class="label" for="scheduleNotes">Assignment / post notes</label><input class="field" id="scheduleNotes" maxlength="180" placeholder="e.g. Sound desk, lobby coverage, break relief"></div>
-            <div class="fieldgroup timeSheetSubmit"><button class="btn primary" type="submit">＋ Add scheduled shift</button><span class="helpText">Overlapping shifts for the same technician are rejected. Overnight coverage should be split across two dated shifts.</span></div>
-          </form>
-          <div class="timeSheetListHeader"><h3>Assigned coverage</h3><span class="pill" id="timeSheetCount">0 shifts</span></div>
-          <div class="timeSheetList" id="timeSheetList"><div class="empty"><strong>No shifts scheduled</strong>Administrators can assign technician coverage for the active event above.</div></div>
-        </section>
+
 
         <div class="sectionhead"><div><h2>Technician checklist</h2><p>Change section names, instructions, individual tasks, or add new tasks.</p></div></div>
         <div id="checklistSettings" class="settingsStack"></div>
