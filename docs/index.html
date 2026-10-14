@@ -6,15 +6,29 @@
   <meta name="theme-color" content="#0a111a">
   <meta name="color-scheme" content="dark">
   <meta name="description" content="Backstage is the shared theatre technician desk for shift handoffs, rental checklists, and incident tracking.">
-  <title>Backstage | Technician Desk</title>
+  <title>Backstage | Production Desk</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body class="authPending">
   <a class="skipLink" href="#mainContent">Skip to workspace</a>
   <div class="loginScreen" id="loginScreen">
+    <aside class="loginAside" aria-label="About Backstage">
+      <div class="loginAsideBrand"><span class="loginAsideMark" aria-hidden="true">B</span><span><strong>BACKSTAGE</strong><small>PRODUCTION OPERATIONS</small></span></div>
+      <div class="loginAsideContent">
+        <p class="loginAsideKicker">THE TECHNICAL WORKSPACE</p>
+        <h2>Keep every shift<br><em>in sync.</em></h2>
+        <p class="loginAsideIntro">A shared operational record for the people who make the event happen—before doors, during the show, and through strike.</p>
+        <div class="loginWorkflow" aria-hidden="true">
+          <div class="loginWorkflowItem"><span class="workflowIndex">01</span><span class="workflowRule"></span><span class="workflowCopy"><strong>Prepare</strong><small>Schedule · Readiness checks</small></span><span class="workflowGlyph">↗</span></div>
+          <div class="loginWorkflowItem"><span class="workflowIndex">02</span><span class="workflowRule"></span><span class="workflowCopy"><strong>Operate</strong><small>Incident log · Live context</small></span><span class="workflowGlyph">◈</span></div>
+          <div class="loginWorkflowItem"><span class="workflowIndex">03</span><span class="workflowRule"></span><span class="workflowCopy"><strong>Hand off</strong><small>Shift notes · Clear ownership</small></span><span class="workflowGlyph">⇄</span></div>
+        </div>
+      </div>
+      <div class="loginAsideFoot"><span class="liveIndicator" aria-hidden="true"></span><span>ONE SHARED RECORD</span><span class="asideFootLine"></span><span>BUILT FOR CREW</span></div>
+    </aside>
     <section class="loginPanel" role="dialog" aria-modal="true" aria-labelledby="loginTitle" aria-describedby="loginDescription">
       <div class="loginBrandmark" aria-hidden="true">B</div>
-      <p class="loginEyebrow">BACKSTAGE · TECHNICIAN DESK</p>
+      <p class="loginEyebrow">BACKSTAGE · PRODUCTION DESK</p>
       <h1 id="loginTitle">Sign in to Backstage</h1>
       <p class="loginDescription" id="loginDescription">Sign in with your individual technician account to access the shared event handoff, checklist, and incident log.</p>
       <div class="loginTrustRow">
@@ -38,25 +52,39 @@
   <div class="app">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brandmark">B</div>
-        <div><b>BACKSTAGE</b><small>TECHNICIAN DESK</small></div>
+        <div class="brandmark" aria-hidden="true">B</div>
+        <div class="brandCopy"><b>BACKSTAGE</b><small>PRODUCTION DESK</small></div>
       </div>
 
-      <div>
-        <div class="navlabel">Rental operations</div>
-        <nav class="nav" aria-label="Main navigation">
-          <button type="button" class="active" data-view="operations"><span class="navIcon" aria-hidden="true">▦</span><span class="navText">Operations board</span></button>
+      <div class="workspaceTag"><span class="workspaceTagMark" aria-hidden="true">▦</span><span><small>WORKSPACE</small><strong>Venue operations</strong></span><span class="workspaceChevron" aria-hidden="true">⌄</span></div>
+
+      <div class="navGroup">
+        <div class="navlabel">Control room</div>
+        <nav class="nav" aria-label="Operations navigation">
+          <button type="button" class="active" data-view="operations"><span class="navIcon" aria-hidden="true">▦</span><span class="navText">Overview</span><span class="navArrow" aria-hidden="true">↗</span></button>
           <button type="button" data-view="schedule"><span class="navIcon" aria-hidden="true">▤</span><span class="navText">Crew schedule</span><span class="navCount" id="scheduleNavCount">0</span></button>
-          <button type="button" data-view="handoff"><span class="navIcon" aria-hidden="true">⇄</span><span class="navText">Shift handoff</span><span class="navCount" id="handoffNavCount">0</span></button>
-          <button type="button" data-view="checklist"><span class="navIcon" aria-hidden="true">☑</span><span class="navText">Shift checklist</span><span class="navCount" id="checkNavCount">0%</span></button>
-          <button type="button" data-view="incidents"><span class="navIcon" aria-hidden="true">⚠</span><span class="navText">Incident log</span><span class="pill amber" id="openIncidentNav">0 open</span></button>
-          <button type="button" data-view="settings" data-admin-only hidden><span class="navIcon" aria-hidden="true">⚙</span><span class="navText">Settings &amp; admin</span></button>
         </nav>
       </div>
 
-      <div class="sideNote">
-        <span class="dot"></span><strong>Shared venue record</strong>
-        <p>Technicians handle handoffs, checklist progress, and incidents. Administrators manage configuration, accounts, new events, and record cleanup.</p>
+      <div class="navGroup">
+        <div class="navlabel">Shift tools</div>
+        <nav class="nav" aria-label="Shift tools navigation">
+          <button type="button" data-view="handoff"><span class="navIcon" aria-hidden="true">⇄</span><span class="navText">Shift handoff</span><span class="navCount" id="handoffNavCount">0</span></button>
+          <button type="button" data-view="checklist"><span class="navIcon" aria-hidden="true">☑</span><span class="navText">Shift checklist</span><span class="navCount" id="checkNavCount">0%</span></button>
+          <button type="button" data-view="incidents"><span class="navIcon" aria-hidden="true">⚠</span><span class="navText">Incident register</span><span class="pill amber" id="openIncidentNav">0 open</span></button>
+        </nav>
+      </div>
+
+      <nav class="nav adminNav" aria-label="Administration navigation" data-admin-only hidden>
+        <button type="button" data-view="settings" data-admin-only hidden><span class="navIcon" aria-hidden="true">⚙</span><span class="navText">Settings &amp; admin</span></button>
+      </nav>
+
+      <div class="sidebarBottom">
+        <div class="sideNote">
+          <div class="sideNoteTop"><span class="dot"></span><strong>Shared venue record</strong></div>
+          <p>Shift notes, readiness checks, and incident follow-up in one place.</p>
+        </div>
+        <div class="sidebarVersion"><span>BACKSTAGE</span><span>TECHNICAL OPERATIONS</span></div>
       </div>
     </aside>
 
@@ -289,7 +317,7 @@
         </div>
       </section>
 
-      <footer>BACKSTAGE TECHNICIAN DESK · Shared-host recordkeeping · Changes autosave to the theatre host. Refresh to load another technician’s latest changes. Urgent incidents must still be communicated directly.</footer>
+      <footer>BACKSTAGE PRODUCTION DESK · Shared-host recordkeeping · Changes autosave to the theatre host. Refresh to load another technician’s latest changes. Urgent incidents must still be communicated directly.</footer>
     </main>
   </div>
 
