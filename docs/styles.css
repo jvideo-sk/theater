@@ -1144,3 +1144,164 @@ footer { margin-top: 25px; padding-top: 12px; border-top-color: #223348; color: 
   .topbar { position: static; margin: 0 0 16px; padding: 0 0 12px; background: white; border-bottom: 1px solid #aaa; }
   .pageTitle, .sectionhead h2, .cardTitle, .boardHero h2, .historyWho { color: #111; }
 }
+
+/* ========================================================================
+   Venue-wide operations modules
+   Shares the original blue work-light palette; these are operational tables,
+   not decorative dashboard cards.
+   ======================================================================== */
+.topbarTools { align-items: flex-end; gap: 10px; }
+.activeEventControl { display: grid; gap: 4px; min-width: 200px; max-width: 290px; }
+.activeEventControl > span { color: var(--dim); font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+.activeEventControl .field { min-height: 40px; padding: 7px 32px 7px 11px; font-size: 13px; }
+.activeEventControl .field:disabled { opacity: .9; color: var(--muted); cursor: default; }
+.venueNavGroup { padding-top: 14px; border-top: 1px solid var(--line); }
+
+.venuePulse { margin-bottom: 16px; padding: 18px 20px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: linear-gradient(120deg, rgb(21 35 54 / 88%), rgb(12 23 37 / 96%)); }
+.venuePulseHead { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 15px; }
+.venuePulseHead h2 { margin-top: 2px; font: 700 23px/1.05 var(--font-display); }
+.venuePulseCaption { color: var(--dim); font-size: 12px; }
+.venuePulseMetrics { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); }
+.venuePulseMetrics article { min-width: 0; padding: 0 16px; border-left: 1px solid var(--line); }
+.venuePulseMetrics article:first-child { padding-left: 0; border-left: 0; }
+.venuePulseMetrics article:last-child { padding-right: 0; }
+.venuePulseMetrics article > span { color: var(--muted); font-size: 13px; }
+.venuePulseMetrics strong { display: block; margin: 4px 0 0; font: 700 29px/1 var(--font-display); font-variant-numeric: tabular-nums; }
+.venuePulseMetrics small { display: block; margin-top: 5px; color: var(--dim); font-size: 12px; }
+
+.venueSummarybar { margin-bottom: 16px; }
+.adminEditorCard, .venueListCard, .maintenanceCreateCard, .venueSettingsCard { margin-bottom: 16px; }
+.adminEditorCard { border-color: #314a68; background: linear-gradient(180deg, rgb(21 35 54 / 55%), var(--surface)); }
+.venueFormGrid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
+.venueFormGrid .span2 { grid-column: span 2; }
+.venueFormGrid .fieldgroup { display: grid; align-content: start; gap: 6px; min-width: 0; }
+.venueFormGrid .label { color: var(--muted); }
+.venueFormActions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding-top: 2px; }
+.venueFormActions .helpText { flex: 1 1 260px; }
+.inlineFilters { display: flex; align-items: center; gap: 8px; min-width: min(100%, 410px); }
+.inlineFilters .field { min-width: 0; }
+.inlineFilters input { flex: 1; }
+.compactSearch { width: min(100%, 240px); }
+.venueRecordList { display: grid; gap: 8px; }
+.venueRecordRow { display: grid; grid-template-columns: minmax(0,1fr) minmax(155px, auto); align-items: center; gap: 18px; min-width: 0; padding: 15px 16px; border: 1px solid var(--line); border-radius: 9px; background: #0b1522; }
+.venueRecordRow.recordActive { border-color: #45668b; background: linear-gradient(110deg, rgb(156 196 255 / 8%), #0b1522 58%); box-shadow: inset 3px 0 0 var(--accent); }
+.venueRecordMain { min-width: 0; }
+.recordEyebrow { display: flex; align-items: center; flex-wrap: wrap; gap: 7px 12px; margin-bottom: 4px; color: var(--dim); font-size: 11px; font-weight: 600; letter-spacing: .055em; text-transform: uppercase; }
+.recordEyebrow > span + span { position: relative; }
+.recordCurrent { color: var(--accent); }
+.venueRecordMain h3 { overflow-wrap: anywhere; font-size: 17px; font-weight: 650; line-height: 1.25; }
+.venueRecordMain p { margin-top: 5px; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.recordNotes { margin-top: 7px; color: var(--dim); font-size: 12.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.recordMetaLine { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 14px; margin-top: 9px; color: var(--dim); font-size: 11.5px; }
+.recordMetaLine span { display: inline-flex; align-items: center; gap: 5px; }
+.venueRecordAside { display: flex; align-items: flex-end; flex-direction: column; gap: 8px; min-width: 0; }
+.venueRecordActions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.venueRecordActions .btn { white-space: nowrap; }
+.phaseChip { max-width: 220px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); font-size: 11px; text-align: right; }
+.venueRecordIcon { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--raised); color: var(--accent); font-size: 10px; font-weight: 800; letter-spacing: .04em; }
+.venueRecordRow:has(.venueRecordIcon) { grid-template-columns: 44px minmax(0,1fr) minmax(140px,auto); }
+.assetTag { padding: 2px 6px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--raised); color: var(--accent); font: 600 11px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: 0; }
+.inlineStatusSelect { min-width: 140px; width: auto; min-height: 34px; padding: 5px 28px 5px 8px; font-size: 12px; }
+.ownerInlineField { width: min(190px, 100%); min-height: 33px; padding: 5px 8px; font-size: 12px; }
+.maintenanceRecord { position: relative; padding-left: 18px; }
+.maintenancePriorityMark { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; border-radius: 9px 0 0 9px; background: var(--line-strong); }
+.priority-urgent { background: var(--hold); }
+.priority-high { background: var(--standby); }
+.priority-normal { background: var(--accent); }
+.priority-low { background: var(--line-strong); }
+.maintenanceComplete { opacity: .72; }
+.venueIdentityForm { display: flex; align-items: flex-end; gap: 12px; }
+.venueIdentityForm .fieldgroup { flex: 1; display: grid; gap: 6px; }
+
+@media (max-width: 1100px) {
+  .topbarTools { align-items: flex-end; }
+  .activeEventControl { min-width: 170px; max-width: 220px; }
+  .venuePulseMetrics article { padding: 0 11px; }
+  .venuePulseMetrics strong { font-size: 26px; }
+  .venueRecordRow { grid-template-columns: minmax(0,1fr) minmax(130px,auto); }
+  .venueRecordRow:has(.venueRecordIcon) { grid-template-columns: 40px minmax(0,1fr) minmax(125px,auto); }
+}
+@media (max-width: 960px) {
+  .venueNavGroup { padding-top: 0; border-top: 0; }
+  .venuePulse { padding: 14px; }
+  .venuePulseMetrics { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 13px 0; }
+  .venuePulseMetrics article:nth-child(3) { padding-left: 0; border-left: 0; }
+  .venuePulseMetrics article:nth-child(3), .venuePulseMetrics article:nth-child(4) { padding-top: 10px; border-top: 1px solid var(--line); }
+  .venuePulseMetrics article:nth-child(n+3) { padding-top: 10px; }
+  .topbarTools { flex-wrap: wrap; justify-content: flex-end; }
+  .activeEventControl { min-width: min(240px, 48vw); }
+  .topbarTools .actionMenu { display: none; }
+}
+@media (max-width: 720px) {
+  .topbarTools { display: flex; flex: 0 0 auto; align-items: flex-end; flex-direction: column; gap: 5px; }
+  .activeEventControl { width: min(50vw, 190px); min-width: 130px; }
+  .activeEventControl > span { font-size: 9px; }
+  .activeEventControl .field { min-height: 31px; padding: 4px 20px 4px 6px; font-size: 10.5px; }
+  .topbarTools .newEventAction { min-height: 30px; font-size: 10px; }
+  .venuePulseHead { align-items: flex-start; }
+  .venuePulseHead h2 { font-size: 20px; }
+  .venuePulseCaption { max-width: 110px; text-align: right; font-size: 10px; }
+  .venuePulseMetrics article > span { font-size: 11px; }
+  .venuePulseMetrics strong { font-size: 24px; }
+  .venuePulseMetrics small { font-size: 10px; }
+  .venueFormGrid { grid-template-columns: minmax(0,1fr); }
+  .venueFormGrid .span2 { grid-column: auto; }
+  .inlineFilters { width: 100%; min-width: 0; }
+  .venueRecordRow, .venueRecordRow:has(.venueRecordIcon) { grid-template-columns: minmax(0,1fr); gap: 10px; padding: 13px; }
+  .venueRecordIcon { display: none; }
+  .venueRecordAside { align-items: flex-start; flex-direction: row; flex-wrap: wrap; justify-content: flex-start; width: 100%; padding-top: 8px; border-top: 1px solid var(--line); }
+  .venueRecordActions { justify-content: flex-start; width: 100%; }
+  .phaseChip { max-width: 100%; text-align: left; }
+  .venueSummarybar { gap: 0; }
+  .venueSummarybar .summary { padding: 9px 12px; }
+  .venueIdentityForm { align-items: stretch; flex-direction: column; }
+  .venueRecordAside .inlineStatusSelect, .venueRecordAside .ownerInlineField { flex: 1 1 140px; }
+}
+
+/* Venue month calendar: one shared schedule across every room and event type. */
+.venueCalendarCard { overflow: hidden; }
+.venueCalendarHead { align-items: center; gap: 16px; flex-wrap: wrap; }
+.calendarToolbar { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap; }
+.calendarToolbar strong { min-width: 132px; color: var(--text); font: 650 20px/1.2 var(--font-display); text-align: center; }
+.venueCalendarGrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--line); gap: 1px; }
+.calendarWeekday { min-width: 0; padding: 8px 10px; background: var(--raised); color: var(--dim); font-size: 11px; font-weight: 750; letter-spacing: .07em; text-align: right; text-transform: uppercase; }
+.calendarDay { min-width: 0; min-height: 112px; padding: 7px; background: var(--surface); }
+.calendarDayOutside { background: var(--sunken); }
+.calendarDayOutside .calendarDayNumber { color: #64758a; }
+.calendarDayToday { box-shadow: inset 0 0 0 1px var(--accent); background: linear-gradient(150deg, var(--accent-tint), var(--surface) 58%); }
+.calendarDayNumber { display: inline-grid; place-items: center; min-width: 25px; height: 25px; padding: 0 5px; border-radius: 6px; color: var(--muted); font: 600 13px/1 var(--font-display); }
+.calendarDayToday .calendarDayNumber { background: var(--accent); color: var(--accent-ink); }
+.calendarDayEvents { display: grid; align-content: start; gap: 4px; margin-top: 3px; }
+.calendarEventItem { display: grid; gap: 1px; width: 100%; min-width: 0; padding: 5px 6px; border: 1px solid var(--line-strong); border-left: 3px solid var(--accent); border-radius: 5px; background: var(--raised); color: var(--text); text-align: left; line-height: 1.2; }
+button.calendarEventItem { cursor: pointer; }
+button.calendarEventItem:hover { border-color: var(--accent); background: #1b2c41; }
+.calendarEventItem.calendarEventActive { border-color: #5685b8; border-left-color: var(--go); background: rgb(111 220 174 / 8%); }
+.calendarEventItem.green { border-left-color: var(--go); }
+.calendarEventItem.amber { border-left-color: var(--standby); }
+.calendarEventItem.red { border-left-color: var(--hold); }
+.calendarEventItem strong { display: block; overflow: hidden; color: var(--text); font-size: 11.5px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.calendarEventTime { color: var(--dim); font-size: 10px; font-variant-numeric: tabular-nums; }
+.calendarMoreEvents { color: var(--accent); font-size: 10.5px; font-weight: 700; padding: 2px 4px; }
+.calendarHint { margin-top: 9px; color: var(--dim); font-size: 11.5px; }
+@media (max-width: 960px) {
+  .calendarDay { min-height: 96px; padding: 5px; }
+  .calendarWeekday { padding: 7px 5px; }
+  .calendarEventItem { padding: 4px; }
+  .calendarEventItem strong { font-size: 10.5px; }
+  .calendarEventTime { font-size: 9.5px; }
+}
+@media (max-width: 720px) {
+  .venueCalendarHead { align-items: flex-start; }
+  .calendarToolbar { width: 100%; justify-content: flex-start; }
+  .calendarToolbar strong { flex: 1; min-width: 100px; text-align: center; }
+  .venueCalendarGrid { border-radius: 6px; }
+  .calendarWeekday { padding: 7px 1px; font-size: 9px; letter-spacing: .02em; text-align: center; }
+  .calendarDay { min-height: 76px; padding: 3px 2px; }
+  .calendarDayNumber { min-width: 19px; height: 20px; padding: 0 3px; font-size: 11px; }
+  .calendarDayEvents { gap: 2px; margin-top: 2px; }
+  .calendarEventItem { padding: 3px 2px; border-left-width: 2px; }
+  .calendarEventItem strong { font-size: 9px; }
+  .calendarEventTime { display: none; }
+  .calendarMoreEvents { padding: 1px; font-size: 9px; }
+  .calendarHint { font-size: 10.5px; }
+}

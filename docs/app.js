@@ -82,6 +82,8 @@
   let activeSessionToken = "";
   let activeUser = null;
   let activeView = "operations";
+  let venueCalendarMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  let venueCalendarInitialized = false;
   let technicianDirectory = [];
   let reloadAfterLogin = false;
   let state = createBlankState();
@@ -177,9 +179,21 @@
     return state.settings.checklist;
   }
 
+  function createBlankVenue() {
+    return {
+      name: "Backstage Theatre",
+      activeEventId: "",
+      events: [],
+      rooms: [],
+      equipment: [],
+      maintenance: [],
+    };
+  }
+
   function createBlankState() {
     return {
       version: 1,
+      venue: createBlankVenue(),
       settings: cloneDefaultSettings(),
       eventId: createId(),
       event: {
@@ -217,22 +231,103 @@
     };
   }
 
+  function makeVenueEventFromState(source, id, existing = {}) {
+    const event = source?.event && typeof source.event === "object" ? source.event : {};
+    const workspace = existing.workspace && typeof existing.workspace === "object" ? existing.workspace : {};
+    return {
+      ...existing,
+      id: String(id || existing.id || createId()),
+      name: String(event.name ?? existing.name ?? "Untitled event"),
+      date: String(event.date ?? existing.date ?? localDateString()),
+      phase: String(event.status ?? existing.phase ?? DEFAULT_SETTINGS.eventPhases[0]),
+      spaces: String(event.spaces ?? existing.spaces ?? ""),
+      lead: String(event.lead ?? existing.lead ?? ""),
+      contact: String(event.contact ?? existing.contact ?? ""),
+      schedule: String(event.schedule ?? existing.schedule ?? ""),
+      bookingType: String(existing.bookingType || "Other"),
+      bookingStatus: String(existing.bookingStatus || "Confirmed"),
+      startTime: String(existing.startTime || ""),
+      endTime: String(existing.endTime || ""),
+      roomId: String(existing.roomId || ""),
+      roomIds: Array.isArray(existing.roomIds) ? existing.roomIds.map((roomId) => String(roomId)) : (existing.roomId ? [String(existing.roomId)] : []),
+      technicalNotes: String(existing.technicalNotes || event.schedule || ""),
+      workspace: {
+        checks: JSON.parse(JSON.stringify(source?.checks || workspace.checks || {})),
+        shiftChecks: JSON.parse(JSON.stringify(source?.shiftChecks || workspace.shiftChecks || {})),
+        handoffs: JSON.parse(JSON.stringify(source?.handoffs || workspace.handoffs || [])),
+        incidents: JSON.parse(JSON.stringify(source?.incidents || workspace.incidents || [])),
+        shiftSchedule: JSON.parse(JSON.stringify(source?.shiftSchedule || workspace.shiftSchedule || [])),
+      },
+    };
+  }
+
+  function normalizeVenue(savedVenue, savedState = {}) {
+    const blank = createBlankVenue();
+    const saved = savedVenue && typeof savedVenue === "object" ? savedVenue : {};
+    const cleanList = (value) => Array.isArray(value) ? value.filter((item) => item && typeof item === "object" && item.id).map((item) => ({ ...item, id: String(item.id) })) : [];
+    const venue = {
+      name: String(saved.name || blank.name).slice(0, 120),
+      activeEventId: String(saved.activeEventId || ""),
+      events: cleanList(saved.events),
+      rooms: cleanList(saved.rooms),
+      equipment: cleanList(saved.equipment),
+      maintenance: cleanList(saved.maintenance),
+    };
+    // Migrate existing single-event records without discarding their history.
+    if (!venue.events.length && String(savedState.event?.name || "").trim()) {
+      const id = createId();
+      venue.events.push(makeVenueEventFromState(savedState, id, {}));
+      venue.activeEventId = id;
+    }
+    if (venue.events.length && !venue.events.some((event) => event.id === venue.activeEventId)) {
+      venue.activeEventId = venue.events[0].id;
+    }
+    venue.events = venue.events.map((event) => makeVenueEventFromState({ event: {
+      name: event.name, date: event.date, status: event.phase, spaces: event.spaces, lead: event.lead, contact: event.contact, schedule: event.schedule,
+    } }, event.id, event));
+    venue.rooms = venue.rooms.map((room) => ({
+      id: String(room.id || createId()), name: String(room.name || "Untitled space").slice(0, 120),
+      code: String(room.code || "").slice(0, 24), type: String(room.type || "Other"),
+      capacity: String(room.capacity ?? ""), status: String(room.status || "Available"),
+      notes: String(room.notes || "").slice(0, 500), createdAt: Number(room.createdAt || Date.now()),
+    }));
+    venue.equipment = venue.equipment.map((item) => ({
+      id: String(item.id || createId()), name: String(item.name || "Untitled equipment").slice(0, 140),
+      assetId: String(item.assetId || "UNASSIGNED").slice(0, 50), category: String(item.category || "Other"),
+      roomId: String(item.roomId || ""), status: String(item.status || "Available"),
+      serial: String(item.serial || "").slice(0, 120), notes: String(item.notes || "").slice(0, 500),
+      createdAt: Number(item.createdAt || Date.now()),
+    }));
+    venue.maintenance = venue.maintenance.map((item) => ({
+      id: String(item.id || createId()), title: String(item.title || "Untitled request").slice(0, 140),
+      category: String(item.category || "Other"), priority: String(item.priority || "Normal"),
+      roomId: String(item.roomId || ""), equipmentId: String(item.equipmentId || ""),
+      details: String(item.details || "").slice(0, 3000), reporter: String(item.reporter || ""),
+      owner: String(item.owner || ""), status: String(item.status || "Open"),
+      createdAt: Number(item.createdAt || Date.now()), updatedAt: Number(item.updatedAt || item.createdAt || Date.now()),
+      createdBy: item.createdBy && typeof item.createdBy === "object" ? item.createdBy : null,
+    }));
+    return venue;
+  }
+
   function normalizeState(saved) {
     const blank = createBlankState();
-    return {
+    const normalized = {
       ...blank,
-      ...saved,
-      eventId: saved.eventId || blank.eventId,
-      revision: Number.isSafeInteger(saved.revision) && saved.revision >= 0 ? saved.revision : 0,
-      settings: normalizeSettings(saved.settings),
-      event: { ...blank.event, ...(saved.event || {}) },
-      shiftDraft: { ...blank.shiftDraft, ...(saved.shiftDraft || {}) },
-      checks: saved.checks && typeof saved.checks === "object" ? saved.checks : {},
-      shiftChecks: saved.shiftChecks && typeof saved.shiftChecks === "object" ? saved.shiftChecks : {},
-      handoffs: Array.isArray(saved.handoffs) ? saved.handoffs : [],
-      incidents: Array.isArray(saved.incidents) ? saved.incidents : [],
-      shiftSchedule: Array.isArray(saved.shiftSchedule) ? saved.shiftSchedule : [],
+      ...(saved || {}),
+      eventId: saved?.eventId || blank.eventId,
+      revision: Number.isSafeInteger(saved?.revision) && saved.revision >= 0 ? saved.revision : 0,
+      settings: normalizeSettings(saved?.settings),
+      event: { ...blank.event, ...(saved?.event || {}) },
+      shiftDraft: { ...blank.shiftDraft, ...(saved?.shiftDraft || {}) },
+      checks: saved?.checks && typeof saved.checks === "object" ? saved.checks : {},
+      shiftChecks: saved?.shiftChecks && typeof saved.shiftChecks === "object" ? saved.shiftChecks : {},
+      handoffs: Array.isArray(saved?.handoffs) ? saved.handoffs : [],
+      incidents: Array.isArray(saved?.incidents) ? saved.incidents : [],
+      shiftSchedule: Array.isArray(saved?.shiftSchedule) ? saved.shiftSchedule : [],
     };
+    normalized.venue = normalizeVenue(saved?.venue, { ...normalized, ...(saved || {}) });
+    return normalized;
   }
 
   function isValidState(saved) {
@@ -384,6 +479,10 @@
     }
     const isAdministrator = isAdmin();
     if (adminPanel) adminPanel.hidden = !isAdministrator;
+    const overviewLabel = document.querySelector('[data-view="operations"] .navText');
+    if (overviewLabel) overviewLabel.textContent = isAdministrator ? "Venue overview" : "My Work";
+    const eventsBadge = $("eventsAccessBadge");
+    if (eventsBadge) { eventsBadge.textContent = isAdministrator ? "Admin controls enabled" : "Read-only booking list"; eventsBadge.className = `pill ${isAdministrator ? "green" : ""}`; }
 
     // Every element marked admin-only remains hidden until an authenticated
     // administrator session is confirmed by the host API.
@@ -1122,7 +1221,7 @@
     const phase = String($("eventStatus")?.value || state.event.status || "").trim();
     if (!name) {
       summary.textContent = isAdmin()
-        ? "Set the active rental here. Its event name, date, and phase are shared across handoffs and incident reports."
+        ? "Set the active event here. Event details, handoffs, and incident reports stay attached to that event workspace."
         : "No active event has been set by an administrator yet. Contact an administrator before logging shift details.";
       return;
     }
@@ -1187,6 +1286,10 @@
         if (targetObjectName === "event") {
           updateEventSummary();
           renderOperationsBoard();
+          if (isAdmin()) {
+            syncCurrentEventMetadata();
+            renderVenueEvents();
+          }
         }
         if (targetObjectName === "shiftDraft") {
           $("handoffDraftState").textContent = "Draft autosaved";
@@ -1364,7 +1467,7 @@
     $("boardEventName").textContent = eventName || "No event assigned";
     $("boardEventMeta").textContent = eventName
       ? [state.event.date ? formatShiftDate(state.event.date) : "Date not set", state.event.spaces, state.event.lead ? `Lead: ${state.event.lead}` : ""].filter(Boolean).join(" · ")
-      : "Ask an administrator to assign the active rental and set the crew call sheet.";
+      : "Ask an administrator to select an active event and set the crew call sheet.";
     $("boardEventPhase").textContent = eventName ? (state.event.status || "Phase not set") : "Awaiting event";
     $("boardMyShiftStatus").textContent = myShift ? (getShiftStatus(myShift, now) === "on-duty" ? "On duty" : "Next assigned shift") : "No shift assigned";
     $("boardMyShiftStatus").className = `pill ${myShift ? "green" : "amber"}`;
@@ -1527,10 +1630,541 @@
     renderEditableOptionList("handoffPrioritiesList", "handoffPriorities");
   }
 
+  // ===========================================================================
+  // VENUE OPERATIONS: event catalogue, spaces, equipment, and service requests.
+  // Event workspaces are snapshotted into their catalogue entry before switching
+  // so each event retains its own crew, checklist, handoff, and incident history.
+  // ===========================================================================
+  function getActiveVenueEvent() {
+    return (state.venue?.events || []).find((event) => event.id === state.venue?.activeEventId) || null;
+  }
+
+  function roomName(roomId) {
+    return (state.venue?.rooms || []).find((room) => room.id === roomId)?.name || "Unassigned space";
+  }
+
+  function equipmentName(equipmentId) {
+    return (state.venue?.equipment || []).find((item) => item.id === equipmentId)?.name || "Unspecified equipment";
+  }
+
+  function snapshotActiveVenueEvent() {
+    const active = getActiveVenueEvent();
+    if (!active) return;
+    const updated = makeVenueEventFromState(state, active.id, active);
+    state.venue.events = state.venue.events.map((event) => event.id === active.id ? updated : event);
+  }
+
+  function syncCurrentEventMetadata() {
+    const active = getActiveVenueEvent();
+    if (!active) return;
+    const next = makeVenueEventFromState({ event: state.event }, active.id, active);
+    state.venue.events = state.venue.events.map((event) => event.id === active.id ? next : event);
+    renderVenueSelector();
+  }
+
+  function loadVenueEventIntoWorkspace(record) {
+    if (!record) return;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(record.date || ""))) {
+      const eventDate = new Date(`${record.date}T12:00:00`);
+      venueCalendarMonth = new Date(eventDate.getFullYear(), eventDate.getMonth(), 1);
+      venueCalendarInitialized = true;
+    }
+    const workspace = record.workspace || {};
+    state.venue.activeEventId = record.id;
+    state.event = {
+      name: record.name || "", date: record.date || localDateString(),
+      status: record.phase || state.settings.eventPhases[0] || "Prepping / load-in",
+      spaces: record.spaces || (record.roomId ? roomName(record.roomId) : ""),
+      lead: record.lead || "", contact: record.contact || "", schedule: record.schedule || record.technicalNotes || "",
+    };
+    state.checks = JSON.parse(JSON.stringify(workspace.checks || {}));
+    state.shiftChecks = JSON.parse(JSON.stringify(workspace.shiftChecks || {}));
+    state.handoffs = JSON.parse(JSON.stringify(workspace.handoffs || []));
+    state.incidents = JSON.parse(JSON.stringify(workspace.incidents || []));
+    state.shiftSchedule = JSON.parse(JSON.stringify(workspace.shiftSchedule || []));
+    state.shiftDraft = createBlankState().shiftDraft;
+    state.shiftDraft.priority = state.settings.handoffPriorities[0] || "Routine";
+    fillEventFields();
+    fillHandoffDraft();
+    renderApp();
+    updateSessionIdentity();
+    renderVenueSelector();
+  }
+
+  async function activateVenueEvent(eventId) {
+    if (!isAdmin()) return showToast("Only administrators can switch the active event workspace.");
+    const record = (state.venue.events || []).find((event) => event.id === eventId);
+    if (!record) return showToast("That booking could not be found.");
+    if (record.id === state.venue.activeEventId) {
+      switchView("operations");
+      return;
+    }
+    snapshotActiveVenueEvent();
+    loadVenueEventIntoWorkspace(record);
+    switchView("operations");
+    const saved = await saveState({ immediate: true });
+    if (saved) showToast(`Active workspace changed to ${record.name}. Its event history is kept separately.`);
+  }
+
+  function renderVenueSelector() {
+    const select = $("activeEventSelect");
+    if (!select) return;
+    const events = [...(state.venue?.events || [])].sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")) || String(a.name).localeCompare(String(b.name)));
+    const activeId = state.venue?.activeEventId || "";
+    select.innerHTML = `<option value="">No event selected</option>${events.map((event) => `<option value="${escapeHtml(event.id)}">${escapeHtml(event.name)} · ${escapeHtml(event.date || "Date TBD")}</option>`).join("")}`;
+    select.value = activeId;
+    select.disabled = !isAdmin();
+    select.title = isAdmin() ? "Switch the shared active event workspace" : "The active workspace is selected by an administrator";
+  }
+
+  function fillVenueRoomOptions() {
+    const roomFields = ["bookingRoom", "equipmentRoom", "maintenanceRoom"];
+    roomFields.forEach((id) => {
+      const select = $(id);
+      if (!select) return;
+      const previous = select.multiple ? [...select.selectedOptions].map((option) => option.value) : [select.value];
+      const emptyLabel = id === "bookingRoom" ? "No room assigned" : id === "equipmentRoom" ? "General inventory / storage" : "Unassigned / venue-wide";
+      select.innerHTML = `<option value="">${emptyLabel}</option>` + [...(state.venue.rooms || [])]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((room) => `<option value="${escapeHtml(room.id)}">${escapeHtml(room.name)}${room.code ? ` · ${escapeHtml(room.code)}` : ""}</option>`).join("");
+      if (select.multiple) {
+        [...select.options].forEach((option) => { option.selected = previous.includes(option.value); });
+      } else if (previous.some((value) => [...select.options].some((option) => option.value === value))) {
+        select.value = previous.find((value) => [...select.options].some((option) => option.value === value)) || "";
+      }
+    });
+    const equipmentSelect = $("maintenanceEquipment");
+    if (equipmentSelect) {
+      const previous = equipmentSelect.value;
+      equipmentSelect.innerHTML = `<option value="">Not asset-specific</option>` + (state.venue.equipment || [])
+        .slice().sort((a, b) => a.name.localeCompare(b.name))
+        .map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.assetId)} · ${escapeHtml(item.name)}</option>`).join("");
+      if ([...equipmentSelect.options].some((option) => option.value === previous)) equipmentSelect.value = previous;
+    }
+  }
+
+  function statusClass(status) {
+    const value = String(status || "").toLowerCase();
+    if (["complete", "available", "confirmed", "in progress", "assigned"].includes(value)) return "green";
+    if (["urgent", "out of service", "missing", "cancelled", "closed"].includes(value)) return "red";
+    if (["high", "needs service", "blocked", "under maintenance", "limited access", "tentative", "open"].includes(value)) return "amber";
+    return "";
+  }
+
+  function renderVenuePulse() {
+    const events = state.venue?.events || [];
+    const today = localDateString();
+    const upcoming = events.filter((event) => event.date >= today && !["Complete", "Cancelled"].includes(event.bookingStatus));
+    const attention = (state.venue?.equipment || []).filter((item) => ["Needs service", "Out of service", "Missing"].includes(item.status));
+    const openMaintenance = (state.venue?.maintenance || []).filter((item) => item.status !== "Complete");
+    if ($("venuePulse")) $("venuePulse").hidden = !isAdmin();
+    $("venueUpcomingMetric") && ($("venueUpcomingMetric").textContent = String(upcoming.length));
+    $("venueEquipmentMetric") && ($("venueEquipmentMetric").textContent = String(attention.length));
+    $("venueMaintenanceMetric") && ($("venueMaintenanceMetric").textContent = String(openMaintenance.length));
+    $("venueRoomsMetric") && ($("venueRoomsMetric").textContent = String((state.venue?.rooms || []).filter((room) => room.status !== "Closed").length));
+    $("eventsNavCount") && ($("eventsNavCount").textContent = String(events.length));
+    $("roomsNavCount") && ($("roomsNavCount").textContent = String((state.venue?.rooms || []).length));
+    $("equipmentNavCount") && ($("equipmentNavCount").textContent = String((state.venue?.equipment || []).length));
+    $("maintenanceNavCount") && ($("maintenanceNavCount").textContent = String(openMaintenance.length));
+    $("maintenanceOpenBadge") && ($("maintenanceOpenBadge").textContent = `${openMaintenance.length} open`);
+    renderVenueSelector();
+  }
+
+  function renderVenueCalendar() {
+    const calendar = $("venueCalendar");
+    if (!calendar) return;
+    if (!venueCalendarInitialized) {
+      const currentMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+      const activeEvent = (state.venue?.events || []).find((record) => record.id === state.venue.activeEventId);
+      const nextEvent = [...(state.venue?.events || [])].filter((record) => /^\d{4}-\d{2}-\d{2}$/.test(String(record.date || "")) && record.date >= localDateString() && !["Complete", "Cancelled"].includes(record.bookingStatus)).sort((a, b) => String(a.date).localeCompare(String(b.date)))[0];
+      const initialEvent = activeEvent && /^\d{4}-\d{2}-\d{2}$/.test(String(activeEvent.date || "")) ? activeEvent : nextEvent;
+      if (initialEvent) {
+        const initialDate = new Date(`${initialEvent.date}T12:00:00`);
+        venueCalendarMonth = new Date(initialDate.getFullYear(), initialDate.getMonth(), 1);
+      } else {
+        venueCalendarMonth = currentMonth;
+      }
+      venueCalendarInitialized = true;
+    }
+    const year = venueCalendarMonth.getFullYear();
+    const month = venueCalendarMonth.getMonth();
+    const monthStart = new Date(year, month, 1);
+    $("venueCalendarMonth").textContent = monthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    const gridStart = new Date(year, month, 1 - monthStart.getDay());
+    const days = Array.from({ length: 42 }, (_, index) => new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + index));
+    const eventMap = new Map();
+    (state.venue?.events || []).forEach((record) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(record.date || ""))) return;
+      if (!eventMap.has(record.date)) eventMap.set(record.date, []);
+      eventMap.get(record.date).push(record);
+    });
+    eventMap.forEach((records) => records.sort((a, b) => String(a.startTime || "").localeCompare(String(b.startTime || "")) || String(a.name).localeCompare(String(b.name))));
+    const localDateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    const today = localDateString();
+    const headings = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((name) => `<div class="calendarWeekday" role="columnheader">${name}</div>`).join("");
+    const cells = days.map((date) => {
+      const key = localDateKey(date);
+      const records = eventMap.get(key) || [];
+      const contents = records.slice(0, 3).map((record) => {
+        const active = record.id === state.venue.activeEventId;
+        const roomIds = record.roomIds || (record.roomId ? [record.roomId] : []);
+        const rooms = roomIds.map((id) => roomName(id)).filter((name) => name !== "Unassigned space").join(", ");
+        const time = [record.startTime, record.endTime].filter(Boolean).join("–");
+        const label = `${record.name}${time ? ` · ${time}` : ""}${rooms ? ` · ${rooms}` : ""}`;
+        const cls = `calendarEventItem ${active ? "calendarEventActive" : ""} ${statusClass(record.bookingStatus)}`;
+        const body = `<span class="calendarEventTime">${escapeHtml(time || "All day")}</span><strong>${escapeHtml(record.name || "Untitled event")}</strong>`;
+        return isAdmin()
+          ? `<button type="button" class="${cls}" data-activate-event="${escapeHtml(record.id)}" title="${escapeHtml(`Open ${label}`)}">${body}</button>`
+          : `<div class="${cls}" title="${escapeHtml(label)}">${body}</div>`;
+      }).join("");
+      const more = records.length > 3 ? `<span class="calendarMoreEvents">+${records.length - 3} more</span>` : "";
+      return `<div class="calendarDay ${date.getMonth() !== month ? "calendarDayOutside" : ""} ${key === today ? "calendarDayToday" : ""}" role="gridcell" aria-label="${escapeHtml(date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" }))}"><span class="calendarDayNumber">${date.getDate()}</span><div class="calendarDayEvents">${contents}${more}</div></div>`;
+    }).join("");
+    calendar.innerHTML = headings + cells;
+  }
+
+  function renderVenueEvents() {
+    if (!$ ("venueEventsList")) return;
+    fillVenueRoomOptions();
+    const events = [...(state.venue?.events || [])].sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")) || String(a.startTime || "").localeCompare(String(b.startTime || "")) || String(a.name).localeCompare(String(b.name)));
+    const query = String($("eventSearch")?.value || "").trim().toLowerCase();
+    const status = $("eventStatusFilter")?.value || "all";
+    const filtered = events.filter((event) => {
+      const haystack = [event.name, event.bookingType, event.bookingStatus, event.lead, event.spaces, event.technicalNotes, roomName(event.roomId)].join(" ").toLowerCase();
+      return (!query || haystack.includes(query)) && (status === "all" || event.bookingStatus === status);
+    });
+    $("eventsTotal") && ($("eventsTotal").textContent = String(events.length));
+    $("eventsUpcoming") && ($("eventsUpcoming").textContent = String(events.filter((event) => event.date >= localDateString() && !["Complete", "Cancelled"].includes(event.bookingStatus)).length));
+    $("eventsConfirmed") && ($("eventsConfirmed").textContent = String(events.filter((event) => event.bookingStatus === "Confirmed").length));
+    if ($("eventsAccessBadge")) {
+      $("eventsAccessBadge").textContent = isAdmin() ? "Admin controls enabled" : "Read-only booking list";
+      $("eventsAccessBadge").className = `pill ${isAdmin() ? "green" : ""}`;
+    }
+    $("venueEventsList").innerHTML = filtered.length ? filtered.map((event) => {
+      const active = event.id === state.venue.activeEventId;
+      const time = [event.startTime, event.endTime].filter(Boolean).join("–");
+      const workspace = active ? { checks: state.checks, shiftChecks: state.shiftChecks, handoffs: state.handoffs, incidents: state.incidents, shiftSchedule: state.shiftSchedule } : (event.workspace || {});
+      const linkedRooms = (event.roomIds || (event.roomId ? [event.roomId] : [])).map((id) => roomName(id));
+      const room = linkedRooms.length ? linkedRooms.join(", ") : event.spaces || "Space not assigned";
+      const incidentCount = (workspace.incidents || []).filter((incident) => !incident.resolved).length;
+      return `<article class="venueRecordRow ${active ? "recordActive" : ""}">
+        <div class="venueRecordMain"><div class="recordEyebrow"><span>${escapeHtml(event.bookingType || "Event")}</span><span>${escapeHtml(event.date || "Date TBD")}${time ? ` · ${escapeHtml(time)}` : ""}</span>${active ? '<span class="recordCurrent">ACTIVE WORKSPACE</span>' : ""}</div><h3>${escapeHtml(event.name)}</h3><p>${escapeHtml(room)}${event.lead ? ` · Lead: ${escapeHtml(event.lead)}` : ""}</p>${event.technicalNotes ? `<div class="recordNotes">${escapeHtml(event.technicalNotes)}</div>` : ""}<div class="recordMetaLine"><span>${(workspace.shiftSchedule || []).length} crew calls</span><span>${(workspace.handoffs || []).length} handoffs</span><span>${incidentCount} open event incidents</span></div></div>
+        <div class="venueRecordAside"><span class="pill ${statusClass(event.bookingStatus)}">${escapeHtml(event.bookingStatus || "Tentative")}</span><span class="phaseChip">${escapeHtml(event.phase || "Phase not set")}</span><div class="venueRecordActions">${active ? '<button type="button" class="btn small" disabled>Active workspace</button>' : (isAdmin() ? `<button type="button" class="btn primary small" data-activate-event="${escapeHtml(event.id)}">Open workspace</button>` : '<span class="helpText">Active event selected by admin</span>')}${isAdmin() ? `<button type="button" class="btn small quiet" data-edit-event="${escapeHtml(event.id)}">Edit booking</button>` : ""}</div></div>
+      </article>`;
+    }).join("") : `<div class="empty"><strong>${events.length ? "No bookings match those filters" : "No events booked yet"}</strong>${events.length ? "Clear the search or status filter to see more bookings." : (isAdmin() ? "Create the first booking above, then activate its event workspace when the crew is ready." : "An administrator can add productions, rehearsals, performances, rentals, and other bookings here.")}</div>`;
+    renderVenueCalendar();
+    renderVenuePulse();
+  }
+
+  function renderVenueRooms() {
+    if (!$ ("venueRoomsList")) return;
+    const query = String($("roomSearch")?.value || "").trim().toLowerCase();
+    const rooms = [...(state.venue?.rooms || [])].sort((a, b) => a.name.localeCompare(b.name)).filter((room) => [room.name, room.code, room.type, room.notes, room.status].join(" ").toLowerCase().includes(query));
+    $("roomsAccessBadge") && ($("roomsAccessBadge").textContent = isAdmin() ? "Admin editor" : "Shared directory");
+    $("roomsAccessBadge") && ($("roomsAccessBadge").className = `pill ${isAdmin() ? "green" : ""}`);
+    $("roomListCaption") && ($("roomListCaption").textContent = `${(state.venue?.rooms || []).length} rooms and facilities registered.`);
+    $("venueRoomsList").innerHTML = rooms.length ? rooms.map((room) => {
+      const eventCount = (state.venue.events || []).filter((event) => ((event.roomIds || (event.roomId ? [event.roomId] : [])).includes(room.id)) && !["Complete", "Cancelled"].includes(event.bookingStatus)).length;
+      const assetCount = (state.venue.equipment || []).filter((item) => item.roomId === room.id).length;
+      return `<article class="venueRecordRow"><div class="venueRecordIcon">${room.type === "Performance" ? "STG" : room.type === "Storage" ? "STO" : room.type === "Backstage" ? "BKS" : "RM"}</div><div class="venueRecordMain"><div class="recordEyebrow"><span>${escapeHtml(room.code || room.type || "SPACE")}</span>${room.capacity !== "" ? `<span>Capacity ${escapeHtml(room.capacity)}</span>` : ""}</div><h3>${escapeHtml(room.name)}</h3><p>${escapeHtml(room.type)}${room.notes ? ` · ${escapeHtml(room.notes)}` : ""}</p><div class="recordMetaLine"><span>${eventCount} upcoming / active bookings</span><span>${assetCount} tracked assets</span></div></div><div class="venueRecordAside">${isAdmin() ? `<select class="field inlineStatusSelect" data-room-status="${escapeHtml(room.id)}" aria-label="${escapeHtml(room.name)} status">${["Available", "Limited access", "Under maintenance", "Closed"].map((option) => `<option ${room.status === option ? "selected" : ""}>${option}</option>`).join("")}</select><button class="btn small quiet" type="button" data-delete-room="${escapeHtml(room.id)}">Remove</button>` : `<span class="pill ${statusClass(room.status)}">${escapeHtml(room.status)}</span>`}</div></article>`;
+    }).join("") : `<div class="empty"><strong>No spaces registered</strong>${isAdmin() ? "Add the theatre, studios, lobby, backstage areas, and storage spaces to start connecting bookings and gear to real rooms." : "The venue administrator has not added any rooms or facilities yet."}</div>`;
+    fillVenueRoomOptions();
+  }
+
+  function renderVenueEquipment() {
+    if (!$ ("venueEquipmentList")) return;
+    const query = String($("equipmentSearch")?.value || "").trim().toLowerCase();
+    const status = $("equipmentStatusFilter")?.value || "all";
+    const all = [...(state.venue?.equipment || [])].sort((a, b) => String(a.assetId).localeCompare(String(b.assetId)));
+    const items = all.filter((item) => [item.name, item.assetId, item.category, item.serial, item.notes, roomName(item.roomId)].join(" ").toLowerCase().includes(query) && (status === "all" || item.status === status));
+    $("equipmentTotal") && ($("equipmentTotal").textContent = String(all.length));
+    $("equipmentAvailable") && ($("equipmentAvailable").textContent = String(all.filter((item) => item.status === "Available").length));
+    $("equipmentAttention") && ($("equipmentAttention").textContent = String(all.filter((item) => ["Needs service", "Out of service", "Missing"].includes(item.status)).length));
+    $("equipmentAccessBadge") && ($("equipmentAccessBadge").textContent = isAdmin() ? "Admin inventory" : "Shared read-only inventory");
+    $("equipmentAccessBadge") && ($("equipmentAccessBadge").className = `pill ${isAdmin() ? "green" : ""}`);
+    $("venueEquipmentList").innerHTML = items.length ? items.map((item) => `<article class="venueRecordRow"><div class="venueRecordIcon">${escapeHtml(String(item.category || "GEAR").slice(0, 3).toUpperCase())}</div><div class="venueRecordMain"><div class="recordEyebrow"><span class="assetTag">${escapeHtml(item.assetId)}</span><span>${escapeHtml(item.category)}</span></div><h3>${escapeHtml(item.name)}</h3><p>${escapeHtml(roomName(item.roomId))}${item.serial ? ` · ${escapeHtml(item.serial)}` : ""}</p>${item.notes ? `<div class="recordNotes">${escapeHtml(item.notes)}</div>` : ""}</div><div class="venueRecordAside">${isAdmin() ? `<select class="field inlineStatusSelect" data-equipment-status="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.name)} status">${["Available", "Assigned", "Needs service", "Out of service", "Missing"].map((option) => `<option ${item.status === option ? "selected" : ""}>${option}</option>`).join("")}</select>` : `<span class="pill ${statusClass(item.status)}">${escapeHtml(item.status)}</span>`}<button class="btn small quiet" type="button" data-report-equipment="${escapeHtml(item.id)}">Report issue</button></div></article>`).join("") : `<div class="empty"><strong>${all.length ? "No equipment matches the filters" : "Inventory is empty"}</strong>${all.length ? "Change the search or status filter." : (isAdmin() ? "Register consoles, microphones, lights, projectors, comms, cable, tools, and other shared equipment." : "The venue administrator has not registered any assets yet.")}</div>`;
+    fillVenueRoomOptions();
+  }
+
+  function renderVenueMaintenance() {
+    if (!$ ("venueMaintenanceList")) return;
+    const query = String($("maintenanceSearch")?.value || "").trim().toLowerCase();
+    const statusFilter = $("maintenanceStatusFilter")?.value || "all";
+    const all = [...(state.venue?.maintenance || [])].sort((a, b) => {
+      const urgency = (item) => item.priority === "Urgent" ? 0 : item.priority === "High" ? 1 : item.priority === "Normal" ? 2 : 3;
+      return (a.status === "Complete") - (b.status === "Complete") || urgency(a) - urgency(b) || Number(b.createdAt || 0) - Number(a.createdAt || 0);
+    });
+    const open = all.filter((item) => item.status !== "Complete");
+    const high = open.filter((item) => ["High", "Urgent"].includes(item.priority));
+    const items = all.filter((item) => [item.title, item.category, item.details, item.reporter, item.owner, item.status, roomName(item.roomId), equipmentName(item.equipmentId)].join(" ").toLowerCase().includes(query) && (statusFilter === "all" || item.status === statusFilter));
+    $("maintenanceTotal") && ($("maintenanceTotal").textContent = String(all.length));
+    $("maintenanceOpen") && ($("maintenanceOpen").textContent = String(open.length));
+    $("maintenanceHigh") && ($("maintenanceHigh").textContent = String(high.length));
+    $("venueMaintenanceList").innerHTML = items.length ? items.map((item) => {
+      const creator = item.createdBy?.displayName || item.reporter || "Signed-in technician";
+      const statusControl = isAdmin() ? `<select class="field inlineStatusSelect" data-maintenance-status="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title)} status">${["Open", "In progress", "Blocked", "Complete"].map((option) => `<option ${item.status === option ? "selected" : ""}>${option}</option>`).join("")}</select>` : `<span class="pill ${statusClass(item.status)}">${escapeHtml(item.status)}</span>`;
+      return `<article class="venueRecordRow maintenanceRecord ${item.status === "Complete" ? "maintenanceComplete" : ""}"><div class="maintenancePriorityMark priority-${String(item.priority || "Normal").toLowerCase().replace(/[^a-z]/g, "")}"></div><div class="venueRecordMain"><div class="recordEyebrow"><span>${escapeHtml(item.category)}</span><span>${escapeHtml(new Date(item.createdAt || Date.now()).toLocaleDateString())}</span></div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(roomName(item.roomId))}${item.equipmentId ? ` · ${escapeHtml(equipmentName(item.equipmentId))}` : ""} · Reported by ${escapeHtml(creator)}</p><div class="recordNotes">${escapeHtml(item.details)}</div>${item.owner ? `<div class="recordMetaLine"><span>Follow-up: ${escapeHtml(item.owner)}</span></div>` : ""}</div><div class="venueRecordAside"><span class="pill ${statusClass(item.priority)}">${escapeHtml(item.priority)}</span>${statusControl}${isAdmin() ? `<input class="field ownerInlineField" data-maintenance-owner="${escapeHtml(item.id)}" value="${escapeHtml(item.owner || "")}" maxlength="100" placeholder="Assign owner" aria-label="Follow-up owner for ${escapeHtml(item.title)}">` : ""}</div></article>`;
+    }).join("") : `<div class="empty"><strong>${all.length ? "No requests match those filters" : "No maintenance requests"}</strong>${all.length ? "Try another search or status." : "When gear or a facility needs attention, submit a request above. Keep the issue scoped to the observed facts and notify the supervisor directly for urgent hazards."}</div>`;
+    fillVenueRoomOptions();
+  }
+
+  function renderVenueViews() {
+    renderVenuePulse();
+    renderVenueEvents();
+    renderVenueRooms();
+    renderVenueEquipment();
+    renderVenueMaintenance();
+  }
+
+  function startBookingCreation() {
+    if (!isAdmin()) return;
+    switchView("events");
+    cancelBookingEdit();
+    $("bookingDate").value = localDateString();
+    $("bookingName")?.focus();
+  }
+
+  let editingVenueEventId = "";
+  function cancelBookingEdit() {
+    editingVenueEventId = "";
+    $("eventBookingForm")?.reset();
+    if ($("bookingDate")) $("bookingDate").value = localDateString();
+    if ($("eventBookingFormTitle")) $("eventBookingFormTitle").textContent = "Create an event booking";
+    if ($("saveBookingBtn")) $("saveBookingBtn").textContent = "Create booking";
+    if ($("cancelBookingEditBtn")) $("cancelBookingEditBtn").hidden = true;
+    fillVenueRoomOptions();
+  }
+
+  function editVenueBooking(eventId) {
+    if (!isAdmin()) return showToast("Only administrators can edit bookings.");
+    const record = (state.venue.events || []).find((event) => event.id === eventId);
+    if (!record) return;
+    editingVenueEventId = record.id;
+    $("bookingName").value = record.name || "";
+    $("bookingType").value = record.bookingType || "Other";
+    $("bookingStatus").value = record.bookingStatus || "Confirmed";
+    $("bookingDate").value = record.date || localDateString();
+    const recordRoomIds = record.roomIds || (record.roomId ? [record.roomId] : []);
+    [...$("bookingRoom").options].forEach((option) => { option.selected = recordRoomIds.includes(option.value); });
+    $("bookingStart").value = record.startTime || "";
+    $("bookingEnd").value = record.endTime || "";
+    $("bookingLead").value = record.lead || "";
+    $("bookingContact").value = record.contact || "";
+    $("bookingNotes").value = record.technicalNotes || record.schedule || "";
+    $("eventBookingFormTitle").textContent = `Edit booking · ${record.name}`;
+    $("saveBookingBtn").textContent = "Save booking changes";
+    $("cancelBookingEditBtn").hidden = false;
+    switchView("events");
+    $("bookingName").focus();
+  }
+
+  async function handleBookingSubmit(event) {
+    event.preventDefault();
+    if (!isAdmin()) return showToast("Only administrators can create or edit venue bookings.");
+    const name = $("bookingName").value.trim();
+    const date = $("bookingDate").value;
+    const startTime = $("bookingStart").value;
+    const endTime = $("bookingEnd").value;
+    if (!name || !date) return showToast("Event name and date are required.");
+    if (startTime && endTime && endTime <= startTime) return showToast("End / strike time must be later than the call time. Split overnight bookings into separate dates.");
+    const roomIds = [...$("bookingRoom").selectedOptions].map((option) => option.value).filter(Boolean);
+    const roomId = roomIds[0] || "";
+    const rooms = roomIds.map((id) => (state.venue.rooms || []).find((item) => item.id === id)).filter(Boolean);
+    const closedRoom = rooms.find((room) => ["Closed", "Under maintenance"].includes(room.status));
+    if (closedRoom) return showToast(`${closedRoom.name} is marked ${closedRoom.status.toLowerCase()} and cannot be booked.`);
+    if ($("bookingStatus").value !== "Cancelled" && $("bookingStatus").value !== "Complete") {
+      const conflicting = (state.venue.events || []).find((other) => {
+        if (other.id === editingVenueEventId || other.date !== date || ["Cancelled", "Complete"].includes(other.bookingStatus)) return false;
+        const otherRoomIds = other.roomIds || (other.roomId ? [other.roomId] : []);
+        if (!roomIds.some((id) => otherRoomIds.includes(id))) return false;
+        if (!startTime || !endTime || !other.startTime || !other.endTime) return true;
+        return startTime < other.endTime && other.startTime < endTime;
+      });
+      if (conflicting) {
+        const commonRoomId = roomIds.find((id) => (conflicting.roomIds || (conflicting.roomId ? [conflicting.roomId] : [])).includes(id));
+        return showToast(`Room conflict: ${roomName(commonRoomId)} is also booked for “${conflicting.name}”${conflicting.startTime && conflicting.endTime ? ` (${conflicting.startTime}–${conflicting.endTime})` : " that day"}.`);
+      }
+    }
+    const form = {
+      name, date, bookingType: $("bookingType").value, bookingStatus: $("bookingStatus").value,
+      startTime, endTime, roomId, roomIds, spaces: rooms.map((room) => room.name).join(", "), lead: $("bookingLead").value.trim(),
+      contact: $("bookingContact").value.trim(), schedule: $("bookingNotes").value.trim(),
+      technicalNotes: $("bookingNotes").value.trim(),
+    };
+    if (editingVenueEventId) {
+      const target = state.venue.events.find((record) => record.id === editingVenueEventId);
+      if (!target) return showToast("That booking was removed or is no longer available.");
+      Object.assign(target, form);
+      if (target.id === state.venue.activeEventId) {
+        state.event = { ...state.event, name: form.name, date: form.date, spaces: form.spaces, lead: form.lead, contact: form.contact, schedule: form.schedule };
+        fillEventFields();
+      }
+      cancelBookingEdit();
+      renderVenueViews();
+      const saved = await saveState({ immediate: true });
+      if (saved) showToast("Booking updated on the shared venue calendar.");
+      return;
+    }
+    snapshotActiveVenueEvent();
+    const record = {
+      id: createId(), ...form, phase: state.settings.eventPhases[0] || "Prepping / load-in",
+      workspace: { checks: {}, shiftChecks: {}, handoffs: [], incidents: [], shiftSchedule: [] },
+    };
+    state.venue.events.push(record);
+    cancelBookingEdit();
+    loadVenueEventIntoWorkspace(record);
+    switchView("operations");
+    const saved = await saveState({ immediate: true });
+    if (saved) showToast(`Booking created. ${record.name} is now the active workspace.`);
+  }
+
+  async function handleRoomSubmit(event) {
+    event.preventDefault();
+    if (!isAdmin()) return showToast("Only administrators can manage venue spaces.");
+    const name = $("roomName").value.trim();
+    const code = $("roomCode").value.trim();
+    if (!name) return;
+    if ((state.venue.rooms || []).some((room) => room.name.toLowerCase() === name.toLowerCase() || (code && room.code.toLowerCase() === code.toLowerCase()))) return showToast("A room with that name or short code already exists.");
+    state.venue.rooms.push({ id: createId(), name, code, type: $("roomType").value, capacity: $("roomCapacity").value, status: $("roomStatus").value, notes: $("roomNotes").value.trim(), createdAt: Date.now() });
+    $("roomForm").reset();
+    renderVenueViews();
+    const saved = await saveState({ immediate: true });
+    if (saved) showToast(`${name} added to the venue directory.`);
+  }
+
+  async function handleEquipmentSubmit(event) {
+    event.preventDefault();
+    if (!isAdmin()) return showToast("Only administrators can register equipment.");
+    const name = $("equipmentName").value.trim();
+    const assetId = $("equipmentAssetId").value.trim();
+    if (!name || !assetId) return;
+    if ((state.venue.equipment || []).some((item) => item.assetId.toLowerCase() === assetId.toLowerCase())) return showToast("That asset ID already exists. Asset tags must be unique.");
+    state.venue.equipment.push({ id: createId(), name, assetId, category: $("equipmentCategory").value, roomId: $("equipmentRoom").value, status: $("equipmentStatus").value, serial: $("equipmentSerial").value.trim(), notes: $("equipmentNotes").value.trim(), createdAt: Date.now() });
+    $("equipmentForm").reset();
+    renderVenueViews();
+    const saved = await saveState({ immediate: true });
+    if (saved) showToast(`${assetId} added to equipment inventory.`);
+  }
+
+  async function handleMaintenanceSubmit(event) {
+    event.preventDefault();
+    const title = $("maintenanceTitle").value.trim();
+    const details = $("maintenanceDetails").value.trim();
+    if (!title || !details) return;
+    const request = {
+      id: createId(), title, category: $("maintenanceCategory").value, priority: $("maintenancePriority").value,
+      roomId: $("maintenanceRoom").value, equipmentId: $("maintenanceEquipment").value,
+      details, reporter: String($("maintenanceReporter").value.trim() || activeUser?.displayName || "Signed-in technician").slice(0, 100),
+      owner: "", status: "Open", createdAt: Date.now(), updatedAt: Date.now(), createdBy: null,
+    };
+    state.venue.maintenance.push(request);
+    $("maintenanceForm").reset();
+    if ($("maintenanceReporter")) $("maintenanceReporter").value = activeUser?.displayName || "";
+    renderVenueViews();
+    const saved = await saveState({ immediate: true });
+    if (saved) showToast("Maintenance request submitted to the shared venue queue.");
+  }
+
+  async function handleVenueChange(event) {
+    const field = event.target;
+    if (field.id === "activeEventSelect") {
+      if (field.value && field.value !== state.venue.activeEventId) await activateVenueEvent(field.value);
+      return;
+    }
+    if (field.matches("[data-room-status]")) {
+      if (!isAdmin()) return showToast("Only administrators can change room status.");
+      const room = state.venue.rooms.find((item) => item.id === field.dataset.roomStatus);
+      if (!room) return;
+      room.status = field.value;
+      renderVenueViews();
+      if (await saveState({ immediate: true })) showToast(`${room.name} status updated.`);
+      return;
+    }
+    if (field.matches("[data-equipment-status]")) {
+      if (!isAdmin()) return showToast("Only administrators can change equipment state.");
+      const item = state.venue.equipment.find((record) => record.id === field.dataset.equipmentStatus);
+      if (!item) return;
+      item.status = field.value;
+      renderVenueViews();
+      if (await saveState({ immediate: true })) showToast(`${item.assetId} status updated.`);
+      return;
+    }
+    if (field.matches("[data-maintenance-status]")) {
+      if (!isAdmin()) return showToast("Only administrators can manage request status.");
+      const item = state.venue.maintenance.find((record) => record.id === field.dataset.maintenanceStatus);
+      if (!item) return;
+      item.status = field.value;
+      item.updatedAt = Date.now();
+      renderVenueViews();
+      if (await saveState({ immediate: true })) showToast("Maintenance status updated.");
+    }
+  }
+
+  async function handleVenueClick(event) {
+    const activate = event.target.closest("[data-activate-event]");
+    if (activate) return void await activateVenueEvent(activate.dataset.activateEvent);
+    const edit = event.target.closest("[data-edit-event]");
+    if (edit) return editVenueBooking(edit.dataset.editEvent);
+    const removeRoom = event.target.closest("[data-delete-room]");
+    if (removeRoom) {
+      if (!isAdmin()) return showToast("Only administrators can remove venue spaces.");
+      const id = removeRoom.dataset.deleteRoom;
+      const room = state.venue.rooms.find((item) => item.id === id);
+      if (!room) return;
+      const hasReferences = state.venue.events.some((item) => item.roomId === id || (item.roomIds || []).includes(id)) || state.venue.equipment.some((item) => item.roomId === id) || state.venue.maintenance.some((item) => item.roomId === id);
+      if (hasReferences) return showToast("This room is referenced by a booking, asset, or maintenance request. Keep it and mark it Closed instead.");
+      if (!window.confirm(`Remove ${room.name} from the room directory?`)) return;
+      state.venue.rooms = state.venue.rooms.filter((item) => item.id !== id);
+      renderVenueViews();
+      if (await saveState({ immediate: true })) showToast("Room removed from the directory.");
+      return;
+    }
+    const reportAsset = event.target.closest("[data-report-equipment]");
+    if (reportAsset) {
+      const asset = state.venue.equipment.find((item) => item.id === reportAsset.dataset.reportEquipment);
+      if (!asset) return;
+      switchView("maintenance");
+      $("maintenanceTitle").value = `${asset.assetId} · ${asset.name} issue`;
+      $("maintenanceCategory").value = "Equipment repair";
+      $("maintenanceRoom").value = asset.roomId || "";
+      $("maintenanceEquipment").value = asset.id;
+      $("maintenanceDetails").focus();
+      showToast("Add the observed symptoms and submit the maintenance request.");
+    }
+  }
+
+  async function handleMaintenanceOwnerChange(event) {
+    const field = event.target.closest("[data-maintenance-owner]");
+    if (!field || !isAdmin()) return;
+    const item = state.venue.maintenance.find((record) => record.id === field.dataset.maintenanceOwner);
+    if (!item) return;
+    item.owner = field.value.trim();
+    item.updatedAt = Date.now();
+    if (await saveState({ immediate: true })) showToast("Follow-up owner saved.");
+  }
+
+  async function handleVenueSettingsSubmit(event) {
+    event.preventDefault();
+    if (!isAdmin()) return showToast("Only administrators can change venue identity.");
+    const name = $("venueNameInput").value.trim();
+    if (!name) return showToast("Enter a venue name.");
+    state.venue.name = name.slice(0, 120);
+    renderVenueName();
+    if (await saveState({ immediate: true })) showToast("Venue identity saved.");
+  }
+
+  function renderVenueName() {
+    const name = state.venue?.name || "Backstage Theatre";
+    document.querySelectorAll(".brandCopy small").forEach((node) => { node.textContent = name; });
+    if ($("venueNameInput") && document.activeElement !== $("venueNameInput")) $("venueNameInput").value = name;
+  }
+
+
   function renderSettings() {
     if (!isAdmin()) return;
     renderChecklistSettings();
     renderApiConnectionPanel();
+    renderVenueName();
   }
 
   async function handleSettingsFieldChange(event) {
@@ -1873,7 +2507,7 @@
       if (activeUser) showToast("Administrator access is required for workspace settings.");
       viewName = "operations";
     }
-    const knownViews = new Set(["operations", "schedule", "handoff", "checklist", "incidents", "settings"]);
+    const knownViews = new Set(["operations", "schedule", "handoff", "checklist", "incidents", "events", "rooms", "equipment", "maintenance", "settings"]);
     if (!knownViews.has(viewName)) viewName = "operations";
     activeView = viewName;
     document.querySelectorAll(".view").forEach((view) => view.classList.toggle("active", view.id === `view-${viewName}`));
@@ -1884,46 +2518,34 @@
       else button.removeAttribute("aria-current");
     });
     setEventDetailsExpanded(viewName === "handoff" || (viewName === "settings" && isAdmin()));
+    const eventCard = document.querySelector(".eventCard");
+    if (eventCard) eventCard.hidden = ["events", "rooms", "equipment", "maintenance"].includes(viewName);
     const pageInfo = {
-      operations: { crumb: "Control room", title: "Operations board", sub: "See who's on duty, who's next, and what needs attention across the event." },
+      operations: { crumb: isAdmin() ? "Venue operations" : "Technician workspace", title: isAdmin() ? "Venue overview" : "My Work", sub: isAdmin() ? "A venue-wide snapshot of bookings, equipment readiness, maintenance, and the currently active event." : "Your active event, shift checklist, crew coverage, handoffs, and anything that needs attention." },
       schedule: { crumb: "Control room", title: "Crew schedule", sub: "One shared call sheet for the full event. Administrators assign coverage; everyone can see the run of shifts." },
       handoff: { crumb: "Shift tools", title: "Shift handoff", sub: "Leave the incoming technician the current situation, completed work, open tasks, and next priorities." },
       checklist: { crumb: "Shift tools", title: "Shift checklist", sub: "Complete the admin-defined tasks for your scheduled shift. Progress is recorded separately per shift." },
-      incidents: { crumb: "Shift tools", title: "Incident register", sub: "Log problems with clear ownership, action taken, priority, and resolution status." },
-      settings: { crumb: "Administration", title: "Settings & administration", sub: "Manage technician accounts, the standard checklist, event phases, categories, and priorities." },
+      incidents: { crumb: "Shift tools", title: "Incident register", sub: "Log event-specific problems with clear ownership, action taken, priority, and resolution status." },
+      events: { crumb: "Venue management", title: "Events & bookings", sub: "Schedule productions, rehearsals, performances, rentals, and the technical calls that support them." },
+      rooms: { crumb: "Venue management", title: "Rooms & facilities", sub: "Keep venue spaces, capacities, access notes, and operational status in one shared directory." },
+      equipment: { crumb: "Venue management", title: "Equipment inventory", sub: "Track shared technical assets, locations, and service state across every event." },
+      maintenance: { crumb: "Venue management", title: "Maintenance & service desk", sub: "Route repair and facility requests into one venue-wide queue with priority and ownership." },
+      settings: { crumb: "Administration", title: "Settings & administration", sub: "Manage accounts, venue identity, checklist templates, event phases, and incident options." },
     }[viewName];
     $("breadcrumb").textContent = pageInfo.crumb;
     $("pageTitle").textContent = pageInfo.title;
     $("pageSub").textContent = pageInfo.sub;
-    if (viewName === "operations") renderOperationsBoard();
+    if (viewName === "operations") { renderOperationsBoard(); renderVenuePulse(); }
     if (viewName === "schedule") renderTimeSheet();
+    if (["events", "rooms", "equipment", "maintenance"].includes(viewName)) renderVenueViews();
+    if (viewName === "settings") renderVenueName();
+    // Switching work areas should return to the top of the new page, not keep
+    // the scroll offset from the previous view under the sticky header.
+    window.scrollTo({ top: 0, behavior: "auto" });
   }
 
   async function startNewEvent() {
-    if (!isAdmin()) {
-      showToast("Only administrators can start a new event.");
-      return;
-    }
-    const message = serverStorageEnabled
-      ? "Start a new shared event? A JSON backup will download, and the host will archive the previous event. This replaces the current record for everyone using this host."
-      : "Start a new event? A JSON backup of the current event will download first. The current event details, checklist checks, handoffs, and incidents will then be cleared from this browser.";
-    const confirmed = window.confirm(message);
-    if (!confirmed) return;
-
-    // Preserve a copy of the current event before switching the browser to a blank record.
-    exportBackup();
-    const savedSettings = state.settings;
-    state = createBlankState();
-    state.settings = savedSettings; // Configuration belongs to the venue, not one event.
-    state.event.status = savedSettings.eventPhases[0];
-    state.shiftDraft.priority = savedSettings.handoffPriorities[0];
-    const saved = await saveState({ immediate: true }); // Host archives the previous event before replacing it.
-    if (!saved) return;
-    fillEventFields();
-    fillHandoffDraft();
-    renderApp();
-    $("handoffDraftState").textContent = "Draft";
-    showToast("New event started on the shared host. The previous event backup was downloaded.");
+    startBookingCreation();
   }
 
   function exportBackup() {
@@ -2022,6 +2644,8 @@
     renderHandoffs();
     renderIncidents();
     renderOperationsBoard();
+    renderVenueViews();
+    renderVenueName();
     $("lastSaved").textContent = state.updated ? new Date(state.updated).toLocaleString() : "Not saved yet";
     $("recordId").textContent = (state.eventId || "NEW").slice(0, 8).toUpperCase();
   }
@@ -2253,6 +2877,26 @@
     bindAutoSaveFields(eventFieldMap, "event");
     bindAutoSaveFields(handoffFieldMap, "shiftDraft");
 
+    $("eventBookingForm")?.addEventListener("submit", handleBookingSubmit);
+    $("cancelBookingEditBtn")?.addEventListener("click", cancelBookingEdit);
+    $("roomForm")?.addEventListener("submit", handleRoomSubmit);
+    $("equipmentForm")?.addEventListener("submit", handleEquipmentSubmit);
+    $("maintenanceForm")?.addEventListener("submit", handleMaintenanceSubmit);
+    $("venueSettingsForm")?.addEventListener("submit", handleVenueSettingsSubmit);
+    document.addEventListener("change", handleVenueChange);
+    document.addEventListener("change", handleMaintenanceOwnerChange);
+    document.addEventListener("click", handleVenueClick);
+    $("eventSearch")?.addEventListener("input", renderVenueEvents);
+    $("eventStatusFilter")?.addEventListener("change", renderVenueEvents);
+    $("calendarPrevBtn")?.addEventListener("click", () => { venueCalendarMonth = new Date(venueCalendarMonth.getFullYear(), venueCalendarMonth.getMonth() - 1, 1); renderVenueCalendar(); });
+    $("calendarNextBtn")?.addEventListener("click", () => { venueCalendarMonth = new Date(venueCalendarMonth.getFullYear(), venueCalendarMonth.getMonth() + 1, 1); renderVenueCalendar(); });
+    $("calendarTodayBtn")?.addEventListener("click", () => { venueCalendarMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1); renderVenueCalendar(); });
+    $("roomSearch")?.addEventListener("input", renderVenueRooms);
+    $("equipmentSearch")?.addEventListener("input", renderVenueEquipment);
+    $("equipmentStatusFilter")?.addEventListener("change", renderVenueEquipment);
+    $("maintenanceSearch")?.addEventListener("input", renderVenueMaintenance);
+    $("maintenanceStatusFilter")?.addEventListener("change", renderVenueMaintenance);
+
     // Crew schedule is visible to everyone; only its edit form is admin-visible.
     $("timeSheetForm")?.addEventListener("submit", addScheduledShift);
     $("scheduleRangeFilter")?.addEventListener("change", renderTimeSheet);
@@ -2422,6 +3066,9 @@
 
     fillEventFields();
     fillHandoffDraft();
+    renderVenueName();
+    fillVenueRoomOptions();
+    if (activeUser && $("maintenanceReporter")) $("maintenanceReporter").value = activeUser.displayName;
     if (activeUser) {
       if ($("outgoingTech")) {
         $("outgoingTech").value = activeUser.displayName;
