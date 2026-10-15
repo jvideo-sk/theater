@@ -1,16 +1,30 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#101b2d" />
-  <meta name="description" content="Backstage venue and technical operations management." />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0f19" id="meta-theme-color" />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="description" content="Backstage — Professional Venue & Technical Operations Workspace for Theatres, Concert Halls, and Live Event Facilities." />
   <title>Backstage — Venue Operations</title>
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2226%22 fill=%22%232563eb%22/><text y=%2268%22 x=%2250%22 font-family=%22system-ui,sans-serif%22 font-weight=%22900%22 font-size=%2256%22 fill=%22white%22 text-anchor=%22middle%22>B</text></svg>" />
 </head>
 <body>
-  <div id="app"><div class="boot-screen"><span class="brand-mark">B</span><div><strong>Backstage</strong><p>Loading venue workspace…</p></div></div></div>
+  <div id="app">
+    <div class="boot-screen">
+      <div class="boot-brand">
+        <span class="brand-mark">B</span>
+        <div class="boot-text">
+          <strong>Backstage</strong>
+          <p>Initializing venue operations workspace…</p>
+        </div>
+      </div>
+      <div class="boot-spinner" aria-hidden="true"></div>
+    </div>
+  </div>
   <div id="modal-root"></div>
+  <div id="palette-root"></div>
   <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
   <script src="/app.js" defer></script>
 </body>
