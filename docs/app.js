@@ -362,7 +362,7 @@
     const notice = $("eventAdminNotice");
     if (notice) notice.hidden = canEdit;
     const title = $("eventDetailsTitle");
-    if (title) title.textContent = canEdit ? "Current event · Administrator managed" : "Current event · Set by administrator";
+    if (title) title.textContent = canEdit ? "Current event" : "Current event, set by an administrator";
   }
 
   function updateSessionIdentity() {
@@ -653,7 +653,7 @@
       }
       serverStorageEnabled = false;
       hostConnectionProblem = Boolean(error.hostUnavailable);
-      $("saveStatus").textContent = hostConnectionProblem ? "HOST UNAVAILABLE · LOCAL ONLY" : "Saved in this browser";
+      $("saveStatus").textContent = hostConnectionProblem ? "Host unavailable · local only" : "Saved in this browser";
       $("saveStatus").className = hostConnectionProblem ? "pill red" : "pill green";
       renderApiConnectionPanel(error.message || "Could not connect. Check the URL, CORS origin setting, network access, and password.");
       showToast(error.message || "Could not connect to the host. Check the host URL and server configuration.");
@@ -722,12 +722,12 @@
 
     if (!serverStorageEnabled) {
       if (window.BACKSTAGE_STATIC_SITE) {
-        $("saveStatus").textContent = "HOST REQUIRED · LOCKED";
+        $("saveStatus").textContent = "Host required · locked";
         $("saveStatus").className = "pill red";
         lockStaticSiteAfterHostFailure("The shared host is not connected. Backstage is locked; it will not save in this browser. Check the API and sign in again.");
         return Promise.resolve(false);
       }
-      $("saveStatus").textContent = hostConnectionProblem ? "HOST UNAVAILABLE · LOCAL ONLY" : "Saved in this browser";
+      $("saveStatus").textContent = hostConnectionProblem ? "Host unavailable · local only" : "Saved in this browser";
       $("saveStatus").className = hostConnectionProblem ? "pill red" : "pill green";
       return Promise.resolve(true);
     }
@@ -780,7 +780,7 @@
       return true;
     } catch (error) {
       hostConnectionProblem = true;
-      $("saveStatus").textContent = "HOST SAVE FAILED";
+      $("saveStatus").textContent = "Host save failed";
       $("saveStatus").className = "pill red";
       console.error("Could not save to the host computer.", error);
       if (window.BACKSTAGE_STATIC_SITE) {
@@ -1011,11 +1011,11 @@
       const activeAssignedUser = technicianDirectory.some((user) => user.username === shift.technicianUsername);
       const technician = `${shift.technicianDisplayName || shift.technicianUsername || "Unassigned"}${activeAssignedUser ? "" : " · inactive account"}`;
       const status = getShiftStatus(shift, now);
-      const statusLabel = status === "on-duty" ? "ON DUTY" : status === "upcoming" ? "UP NEXT" : "COMPLETED";
+      const statusLabel = status === "on-duty" ? "On duty" : status === "upcoming" ? "Up next" : "Completed";
       const isMine = normalizeUsername(shift.technicianUsername) === normalizeUsername(activeUser?.username);
       return `<article class="scheduledShiftRow ${status === "on-duty" ? "shiftCurrent" : ""} ${isMine ? "shiftMine" : ""}" data-shift-row="${escapeHtml(shift.id)}">
         <div class="scheduledShiftWhen"><strong>${escapeHtml(formatShiftDate(shift.date))}</strong><span>${escapeHtml(formatShiftTime(shift.startTime))}–${escapeHtml(formatShiftTime(shift.endTime))}</span></div>
-        <div class="scheduledShiftWho"><strong>${escapeHtml(technician)}${isMine ? ' <span class="youMarker">YOU</span>' : ""}</strong><small>@${escapeHtml(shift.technicianUsername || "unassigned")}${shift.notes ? ` · ${escapeHtml(shift.notes)}` : ""}</small></div>
+        <div class="scheduledShiftWho"><strong>${escapeHtml(technician)}${isMine ? ' <span class="youMarker">You</span>' : ""}</strong><small>@${escapeHtml(shift.technicianUsername || "unassigned")}${shift.notes ? ` · ${escapeHtml(shift.notes)}` : ""}</small></div>
         <span class="shiftStatus ${status}">${statusLabel}</span>
         ${isAdmin() ? `<button type="button" class="btn small danger" data-delete-scheduled-shift="${escapeHtml(shift.id)}">Remove</button>` : ""}
       </article>`;
@@ -1389,25 +1389,25 @@
       const isMine = normalizeUsername(shift.technicianUsername) === normalizeUsername(activeUser?.username);
       return `<div class="boardCrewRow ${status === "on-duty" ? "isOnDuty" : ""}">
         <div class="boardCrewTime"><strong>${escapeHtml(formatShiftTime(shift.startTime))}</strong><small>${escapeHtml(shift.date === today ? "Today" : formatShiftDate(shift.date))}</small></div>
-        <div class="boardCrewInfo"><strong>${escapeHtml(shift.technicianDisplayName || shift.technicianUsername || "Unassigned")}${isMine ? ' <span class="youMarker">YOU</span>' : ""}</strong><small>${escapeHtml(shift.notes || "General coverage")}</small></div>
-        <span class="shiftStatus ${status}">${status === "on-duty" ? "ON DUTY" : status === "upcoming" ? "UP NEXT" : "DONE"}</span>
+        <div class="boardCrewInfo"><strong>${escapeHtml(shift.technicianDisplayName || shift.technicianUsername || "Unassigned")}${isMine ? ' <span class="youMarker">You</span>' : ""}</strong><small>${escapeHtml(shift.notes || "General coverage")}</small></div>
+        <span class="shiftStatus ${status}">${status === "on-duty" ? "On duty" : status === "upcoming" ? "Up next" : "Done"}</span>
       </div>`;
     }).join("") : '<div class="empty"><strong>No upcoming crew shifts</strong>The administrator timesheet will appear here when coverage is assigned.</div>';
 
     const myShiftNode = $("boardMyShift");
     if (!myShift) {
-      myShiftNode.innerHTML = `<div class="boardEmpty"><div class="boardEmptyIcon">◷</div><div><strong>No shift assigned to ${escapeHtml(activeUser?.displayName || "this account")}</strong><p>Ask an administrator to add you to the timesheet. Your check-in checklist opens automatically when you have an assigned shift.</p></div></div>`;
+      myShiftNode.innerHTML = `<div class="boardEmpty"><div class="boardEmptyIcon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><div><strong>No shift assigned to ${escapeHtml(activeUser?.displayName || "this account")}</strong><p>Ask an administrator to add you to the timesheet. Your check-in checklist opens automatically when you have an assigned shift.</p></div></div>`;
       $("boardMyShiftSub").textContent = "Your assignment and arrival checklist";
     } else {
       const status = getShiftStatus(myShift, now);
-      myShiftNode.innerHTML = `<div class="myShiftCall"><span class="overline">${status === "on-duty" ? "CURRENT SHIFT" : "NEXT ASSIGNMENT"}</span><strong>${escapeHtml(formatShiftDate(myShift.date))}</strong><div class="myShiftTime">${escapeHtml(formatShiftTime(myShift.startTime))}–${escapeHtml(formatShiftTime(myShift.endTime))}</div><p>${escapeHtml(myShift.notes || "General technician coverage")}</p><div class="myShiftProgress"><div><span>Shift checklist</span><b>${progress.completed}/${progress.total}</b></div><div class="progress"><span style="width:${percentage}%"></span></div></div><button type="button" class="btn primary" data-view="checklist">Continue checklist ↗</button></div>`;
+      myShiftNode.innerHTML = `<div class="myShiftCall"><span class="overline">${status === "on-duty" ? "Current shift" : "Next assignment"}</span><strong>${escapeHtml(formatShiftDate(myShift.date))}</strong><div class="myShiftTime">${escapeHtml(formatShiftTime(myShift.startTime))}–${escapeHtml(formatShiftTime(myShift.endTime))}</div><p>${escapeHtml(myShift.notes || "General technician coverage")}</p><div class="myShiftProgress"><div><span>Shift checklist</span><b>${progress.completed}/${progress.total}</b></div><div class="progress"><span style="width:${percentage}%"></span></div></div><button type="button" class="btn primary" data-view="checklist">Continue checklist</button></div>`;
       $("boardMyShiftSub").textContent = `${status === "on-duty" ? "Currently assigned" : "Next scheduled"} · checklist progress is shift-specific`;
     }
 
     $("boardIncidentList").innerHTML = open.length ? open.slice(0, 4).map((incident) => `<button type="button" class="boardCompactItem" data-view="incidents"><span class="priorityMark ${priorityClass(incident.priority || incident.severity)}"></span><span class="boardCompactCopy"><strong>${escapeHtml(incident.title || "Untitled incident")}</strong><small>${escapeHtml(incident.category || "Other")} · ${escapeHtml(incident.location || "Location not set")} · ${escapeHtml(incident.createdBy?.displayName || incident.reportedBy || "Technician")}</small></span><span class="incidentPriority ${priorityClass(incident.priority || incident.severity)}">${escapeHtml(incident.priority || incident.severity || "Medium")}</span></button>`).join("") : '<div class="empty"><strong>No open incidents</strong>New technical issues and hazards will appear here.</div>';
 
     const latestHandoffs = [...state.handoffs].sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0)).slice(0, 4);
-    $("boardHandoffList").innerHTML = latestHandoffs.length ? latestHandoffs.map((entry) => `<button type="button" class="boardCompactItem" data-view="handoff"><span class="handoffStamp">⇄</span><span class="boardCompactCopy"><strong>${escapeHtml(entry.outgoing || entry.createdBy?.displayName || "Technician")} <span aria-hidden="true">→</span> ${escapeHtml(entry.incoming || "Next shift unassigned")}</strong><small>${escapeHtml(formatDateTime(entry.savedAt))} · ${escapeHtml(entry.summary || "No status summary")}</small></span><span class="incidentPriority ${priorityClass(entry.priority)}">${escapeHtml(entry.priority || "Routine")}</span></button>`).join("") : '<div class="empty"><strong>No handoffs yet</strong>Saved shift changes will be listed here.</div>';
+    $("boardHandoffList").innerHTML = latestHandoffs.length ? latestHandoffs.map((entry) => `<button type="button" class="boardCompactItem" data-view="handoff"><span class="handoffStamp"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h13l-4-4M17 17H4l4 4"/></svg></span><span class="boardCompactCopy"><strong>${escapeHtml(entry.outgoing || entry.createdBy?.displayName || "Technician")} <span aria-hidden="true">→</span> ${escapeHtml(entry.incoming || "Next shift unassigned")}</strong><small>${escapeHtml(formatDateTime(entry.savedAt))} · ${escapeHtml(entry.summary || "No status summary")}</small></span><span class="incidentPriority ${priorityClass(entry.priority)}">${escapeHtml(entry.priority || "Routine")}</span></button>`).join("") : '<div class="empty"><strong>No handoffs yet</strong>Saved shift changes will be listed here.</div>';
 
     if (refreshRelated) {
       // Metrics share these renderers; they are deliberately kept in one place
@@ -1496,7 +1496,7 @@
     const sections = getChecklistSections();
     $("checklistSettings").innerHTML = sections.length ? sections.map((section) => `
       <article class="card settingsSection" data-settings-section="${escapeHtml(section.id)}">
-        <div class="settingsSectionHead"><div><span class="eyebrow">CHECKLIST SECTION</span><p class="settingsHint">Changes save when you leave a field.</p></div><button type="button" class="btn danger small" data-delete-section="${escapeHtml(section.id)}">Delete section</button></div>
+        <div class="settingsSectionHead"><div><span class="eyebrow">Checklist section</span><p class="settingsHint">Changes save when you leave a field.</p></div><button type="button" class="btn danger small" data-delete-section="${escapeHtml(section.id)}">Delete section</button></div>
         <div class="fields twoCols settingsSectionFields">
           <div class="fieldgroup"><label class="label">Section name</label><input class="field" maxlength="100" required data-section-field="title" data-section-id="${escapeHtml(section.id)}" value="${escapeHtml(section.title)}"></div>
           <div class="fieldgroup"><label class="label">Description</label><input class="field" maxlength="240" data-section-field="description" data-section-id="${escapeHtml(section.id)}" value="${escapeHtml(section.description)}"></div>
@@ -1516,7 +1516,7 @@
         <form class="addTaskForm" data-add-task-to="${escapeHtml(section.id)}">
           <input class="field" name="label" required maxlength="180" placeholder="New checklist task">
           <input class="field" name="help" maxlength="500" placeholder="Instructions / helpful detail (optional)">
-          <button class="btn primary small" type="submit">＋ Add task</button>
+          <button class="btn primary small" type="submit">Add task</button>
         </form>
       </article>
     `).join("") : `<div class="empty"><strong>No checklist sections</strong>Add a section below to build your technician checklist.</div>`;
@@ -1864,8 +1864,8 @@
     card.classList.toggle("collapsed", !expanded);
     button.setAttribute("aria-expanded", String(expanded));
     button.innerHTML = expanded
-      ? 'Hide details <span aria-hidden="true">⌃</span>'
-      : 'Edit details <span aria-hidden="true">⌄</span>';
+      ? 'Hide details'
+      : 'Edit details';
   }
 
   function switchView(viewName) {
@@ -1885,12 +1885,12 @@
     });
     setEventDetailsExpanded(viewName === "handoff" || (viewName === "settings" && isAdmin()));
     const pageInfo = {
-      operations: { crumb: "STAGE MANAGEMENT / OPERATIONS BOARD", title: "Operations board", sub: "See who's on duty, who's next, and what needs attention across the event." },
-      schedule: { crumb: "STAGE MANAGEMENT / CREW SCHEDULE", title: "Crew schedule", sub: "One shared call sheet for the full event. Administrators assign coverage; everyone can see the run of shifts." },
-      handoff: { crumb: "STAGE MANAGEMENT / SHIFT HANDOFF", title: "Shift handoff", sub: "Leave the incoming technician the current situation, completed work, open tasks, and next priorities." },
-      checklist: { crumb: "STAGE MANAGEMENT / SHIFT CHECKLIST", title: "Shift checklist", sub: "Complete the admin-defined tasks for your scheduled shift. Progress is recorded separately per shift." },
-      incidents: { crumb: "STAGE MANAGEMENT / INCIDENT REGISTER", title: "Incident register", sub: "Log problems with clear ownership, action taken, priority, and resolution status." },
-      settings: { crumb: "STAGE MANAGEMENT / ADMINISTRATION", title: "Settings & administration", sub: "Manage technician accounts, the standard checklist, event phases, categories, and priorities." },
+      operations: { crumb: "Control room", title: "Operations board", sub: "See who's on duty, who's next, and what needs attention across the event." },
+      schedule: { crumb: "Control room", title: "Crew schedule", sub: "One shared call sheet for the full event. Administrators assign coverage; everyone can see the run of shifts." },
+      handoff: { crumb: "Shift tools", title: "Shift handoff", sub: "Leave the incoming technician the current situation, completed work, open tasks, and next priorities." },
+      checklist: { crumb: "Shift tools", title: "Shift checklist", sub: "Complete the admin-defined tasks for your scheduled shift. Progress is recorded separately per shift." },
+      incidents: { crumb: "Shift tools", title: "Incident register", sub: "Log problems with clear ownership, action taken, priority, and resolution status." },
+      settings: { crumb: "Administration", title: "Settings & administration", sub: "Manage technician accounts, the standard checklist, event phases, categories, and priorities." },
     }[viewName];
     $("breadcrumb").textContent = pageInfo.crumb;
     $("pageTitle").textContent = pageInfo.title;
@@ -2056,7 +2056,7 @@
     } catch (error) {
       showToast(error.message || "Could not refresh the shared record. Check the host connection.");
     } finally {
-      if (button) { button.disabled = false; button.textContent = "↻ Refresh shared record"; }
+      if (button) { button.disabled = false; button.textContent = "Refresh shared record"; }
     }
   }
 
