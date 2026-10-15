@@ -2691,6 +2691,42 @@
       return;
     }
 
+    if (action === 'open-incident') {
+      const eventId = b.dataset.eventId || ACTIVE_EVENT()?.id;
+      const r = workFor(eventId).incidents.find(i => i.id === paramId);
+      if (r) {
+        if (eventId !== state.activeEventId && isAdmin()) {
+          const ok = await saveState(s => {
+            s.activeEventId = eventId;
+          }, 'Switched to incident event workspace.');
+          if (!ok) return;
+        }
+        currentPage = 'incidents';
+        render();
+        openModal('view-incident', r);
+      }
+      if (paletteActive) closePalette();
+      return;
+    }
+
+    if (action === 'go-maintenance') {
+      currentPage = 'maintenance';
+      currentFilter = '';
+      currentStatusFilter = 'All';
+      render();
+      if (paletteActive) closePalette();
+      return;
+    }
+
+    if (action === 'edit-template') {
+      if (isAdmin()) {
+        currentPage = 'settings';
+        settingsTab = 'checklist';
+        render();
+      }
+      return;
+    }
+
     if (action === 'resolve-incident') {
       const event = ACTIVE_EVENT();
       if (!event) return;
